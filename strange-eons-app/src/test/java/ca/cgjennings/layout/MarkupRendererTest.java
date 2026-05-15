@@ -1,11 +1,14 @@
 package ca.cgjennings.layout;
 
+import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.font.GlyphVector;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,6 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyFloat;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 /**
  * Regression-safe coverage of {@link MarkupRenderer}'s public surface.
@@ -471,6 +478,161 @@ class MarkupRendererTest {
         } catch (ReflectiveOperationException ex) {
             throw new AssertionError("could not reach LayoutSegment.layout", ex);
         }
+    }
+
+    // ---- Drawing operations (recording Graphics2D) -------------------
+    //
+    // Spies on a real Graphics2D and inspects drawGlyphVector calls.
+    // TextLayout renders via drawGlyphVector(GlyphVector, x, y); each
+    // call carries a font (via GlyphVector.getFont()) and a glyph
+    // count. Style-tag transitions show up as font changes; total
+    // glyph count tracks the rendered character count.
+
+    @Test
+    void plainTextRendersViaGlyphVectors() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello world.");
+
+        Graphics2D spy = spyGraphics(300, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 250, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            assertFalse(gv.getAllValues().isEmpty());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void styleTagSwitchesToBoldFont() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello <b>brave</b> world.");
+
+        Graphics2D spy = spyGraphics(300, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 250, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+
+            boolean hasBold = gv.getAllValues().stream()
+                    .map(GlyphVector::getFont)
+                    .anyMatch(Font::isBold);
+            assertTrue(hasBold,
+                    "expected at least one bold glyph vector for <b>brave</b> content");
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void italicTagSwitchesToItalicFont() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello <i>brave</i> world.");
+
+        Graphics2D spy = spyGraphics(300, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 250, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+
+            boolean hasItalic = gv.getAllValues().stream()
+                    .map(GlyphVector::getFont)
+                    .anyMatch(Font::isItalic);
+            assertTrue(hasItalic,
+                    "expected at least one italic glyph vector for <i>brave</i> content");
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void plainTextHasNoBoldOrItalicGlyphs() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello world.");
+
+        Graphics2D spy = spyGraphics(300, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 250, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+
+            for (GlyphVector v : gv.getAllValues()) {
+                Font f = v.getFont();
+                assertFalse(f.isBold(),
+                        "unexpected bold font in plain-text output: " + f);
+                assertFalse(f.isItalic(),
+                        "unexpected italic font in plain-text output: " + f);
+            }
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void styleTagProducesMoreGlyphVectorCallsThanPlainText() {
+        // A style boundary forces the layout engine to split the run,
+        // so a tagged version produces more drawGlyphVector calls
+        // than the same content rendered plain.
+        int plainCalls = countGlyphVectorCalls("Hello brave world.");
+        int taggedCalls = countGlyphVectorCalls("Hello <b>brave</b> world.");
+        assertTrue(taggedCalls > plainCalls,
+                "expected style boundary to increase glyph-vector call count: "
+                        + "plain=" + plainCalls + " tagged=" + taggedCalls);
+    }
+
+    @Test
+    void totalGlyphCountTracksVisibleContent() {
+        // <b>brave</b> contributes 5 visible glyphs beyond what
+        // "Hello  world." would render. Tag markup itself is consumed
+        // by the parser.
+        int plain = totalGlyphsRendered("Hello world.");
+        int tagged = totalGlyphsRendered("Hello <b>brave</b> world.");
+        // tagged should have plain + ~5 visible glyphs (give or take
+        // a space, depending on how the parser handles whitespace
+        // around the tag).
+        assertTrue(tagged >= plain + 4,
+                "expected tagged content to add visible glyphs: "
+                        + "plain=" + plain + " tagged=" + tagged);
+    }
+
+    private int countGlyphVectorCalls(String markup) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(markup);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(0)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            return gv.getAllValues().size();
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    private int totalGlyphsRendered(String markup) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(markup);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(0)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            return gv.getAllValues().stream()
+                    .mapToInt(GlyphVector::getNumGlyphs)
+                    .sum();
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    private static Graphics2D spyGraphics(int w, int h) {
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        return spy(img.createGraphics());
     }
 
     // ---- Test scaffolding --------------------------------------------
