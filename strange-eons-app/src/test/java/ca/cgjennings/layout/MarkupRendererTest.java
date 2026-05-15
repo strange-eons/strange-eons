@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.spy;
@@ -635,6 +636,238 @@ class MarkupRendererTest {
     private static Graphics2D spyGraphics(int w, int h) {
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         return spy(img.createGraphics());
+    }
+
+    // ---- Layout-flag matrix -----------------------------------------
+    //
+    // Alignment flags affect segment positions; fit flags affect how
+    // long content is squeezed to fit a fixed region. These tests pin
+    // the visible effects: where text ends up, and whether oversized
+    // content is shrunk.
+
+    @Test
+    void leftAlignmentDrawsInLeftHalf() {
+        // Horizontal alignment positions visible during layout AND
+        // during draw — appendSegments shows it. Vertical alignment
+        // is applied during draw, so for that we spy the draw call.
+        List<LayoutSegment> segments = layoutAligned("word",
+                MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_TOP,
+                100, 50);
+        float x = segments.get(0).getXOffset();
+        assertTrue(x < 50,
+                "expected left-aligned x in left half of 100-wide region; got " + x);
+    }
+
+    @Test
+    void rightAlignmentDrawsInRightHalf() {
+        List<LayoutSegment> segments = layoutAligned("word",
+                MarkupRenderer.LAYOUT_RIGHT | MarkupRenderer.LAYOUT_TOP,
+                100, 50);
+        float x = segments.get(0).getXOffset();
+        assertTrue(x > 50,
+                "expected right-aligned x in right half of 100-wide region; got " + x);
+    }
+
+    @Test
+    void centerAlignmentPlacesTextInMiddleBand() {
+        float leftX = layoutAligned("word",
+                MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_TOP, 100, 50)
+                .get(0).getXOffset();
+        float rightX = layoutAligned("word",
+                MarkupRenderer.LAYOUT_RIGHT | MarkupRenderer.LAYOUT_TOP, 100, 50)
+                .get(0).getXOffset();
+        float centerX = layoutAligned("word",
+                MarkupRenderer.LAYOUT_CENTER | MarkupRenderer.LAYOUT_TOP, 100, 50)
+                .get(0).getXOffset();
+        assertTrue(centerX > leftX && centerX < rightX,
+                "expected center-aligned x between left=" + leftX
+                        + " and right=" + rightX + "; got " + centerX);
+    }
+
+    @Test
+    void topAlignmentDrawsInUpperHalf() {
+        float y = drawYPosition("word",
+                MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_TOP,
+                200, 200);
+        assertTrue(y < 100,
+                "expected top-aligned draw y in upper half of 200-tall region; got " + y);
+    }
+
+    @Test
+    void bottomAlignmentDrawsInLowerHalf() {
+        float y = drawYPosition("word",
+                MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM,
+                200, 200);
+        assertTrue(y > 100,
+                "expected bottom-aligned draw y in lower half of 200-tall region; got " + y);
+    }
+
+    @Test
+    void middleAlignmentDrawsBetweenTopAndBottom() {
+        float topY = drawYPosition("word",
+                MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_TOP, 200, 200);
+        float bottomY = drawYPosition("word",
+                MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM, 200, 200);
+        float middleY = drawYPosition("word",
+                MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_MIDDLE, 200, 200);
+        assertTrue(middleY > topY && middleY < bottomY,
+                "expected middle-aligned draw y between top=" + topY
+                        + " and bottom=" + bottomY + "; got " + middleY);
+    }
+
+    /**
+     * Returns the y-position passed to the first
+     * {@code drawGlyphVector} call when laying out {@code markup} with
+     * the given alignment into a region of the given dimensions.
+     */
+    private static float drawYPosition(String markup, int align,
+            double w, double h) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setAlignment(align);
+        r.setMarkupText(markup);
+        Graphics2D spy = spyGraphics((int) w + 100, (int) h + 100);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, w, h));
+            ArgumentCaptor<Float> yCaptor = ArgumentCaptor.forClass(Float.class);
+            verify(spy, atLeast(1)).drawGlyphVector(
+                    any(GlyphVector.class), anyFloat(), yCaptor.capture());
+            return yCaptor.getAllValues().get(0);
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void fitNoneAllowsOverflow() {
+        // With FIT_NONE, long content can render past the region
+        // bottom — that is, the last segment's yBottom > region
+        // bottom. Use enough content to overflow a small region.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTextFitting(MarkupRenderer.FIT_NONE);
+        r.setMarkupText(repeat("This is a long sentence. ", 20));
+
+        List<LayoutSegment> segments = new ArrayList<>();
+        try (GraphicsHandle gh = new GraphicsHandle(200, 200)) {
+            r.appendSegments(gh.g, new Rectangle2D.Double(0, 0, 100, 50), segments);
+        }
+        float maxY = (float) segments.stream()
+                .mapToDouble(LayoutSegment::getYBottom)
+                .max().orElse(0);
+        assertTrue(maxY > 50f,
+                "expected FIT_NONE to allow overflow past region bottom (50); "
+                        + "max yBottom = " + maxY);
+    }
+
+    @Test
+    void fitScaleTextReducesContentExtent() {
+        // FIT_SCALE_TEXT applies a TRANSFORM attribute that shrinks
+        // the rendered output; Font.getSize2D() is unchanged. The
+        // observable effect is that the glyph vectors' bounding
+        // boxes shrink (they include the transform). Compare total
+        // visual width across all glyph vectors.
+        String longText = repeat("This is a long sentence. ", 20);
+
+        double extentFitNone = totalVisualWidth(longText, MarkupRenderer.FIT_NONE, 100, 50);
+        double extentFitScale = totalVisualWidth(longText, MarkupRenderer.FIT_SCALE_TEXT, 100, 50);
+        assertTrue(extentFitScale < extentFitNone,
+                "expected FIT_SCALE_TEXT to reduce visual extent; "
+                        + "fitNone=" + extentFitNone + " fitScale=" + extentFitScale);
+    }
+
+    @Test
+    void fitTightenLineSpacingReducesLineGap() {
+        // With FIT_TIGHTEN_LINE_SPACING, lines should pack tighter
+        // when content overflows. Compare line spacing (gap between
+        // line y-offsets) between FIT_NONE and FIT_TIGHTEN_LINE_SPACING.
+        String longText = repeat("Line ", 30);
+
+        double spacingFitNone = averageLineGap(longText, MarkupRenderer.FIT_NONE, 100, 30);
+        double spacingFitTight = averageLineGap(longText, MarkupRenderer.FIT_TIGHTEN_LINE_SPACING, 100, 30);
+        assertTrue(spacingFitTight < spacingFitNone,
+                "expected FIT_TIGHTEN_LINE_SPACING to reduce line gap; "
+                        + "fitNone=" + spacingFitNone + " fitTight=" + spacingFitTight);
+    }
+
+    @Test
+    void fitBothAppliesScalingAndTightening() {
+        // FIT_BOTH = FIT_TIGHTEN_LINE_SPACING | FIT_SCALE_TEXT.
+        // Verify the combined effect: total visual extent shrinks
+        // more than FIT_NONE alone.
+        String longText = repeat("Line of text. ", 30);
+
+        double extentFitNone = totalVisualWidth(longText, MarkupRenderer.FIT_NONE, 100, 40);
+        double extentFitBoth = totalVisualWidth(longText, MarkupRenderer.FIT_BOTH, 100, 40);
+        assertTrue(extentFitBoth < extentFitNone,
+                "FIT_BOTH should reduce extent more than FIT_NONE; "
+                        + "fitNone=" + extentFitNone + " fitBoth=" + extentFitBoth);
+    }
+
+    /**
+     * Sums the visual bounds widths of all glyph vectors drawn — this
+     * captures both font-size changes and TRANSFORM-attribute scaling
+     * applied by FIT_SCALE_TEXT.
+     */
+    private static double totalVisualWidth(String markup, int fitMode,
+            double w, double h) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTextFitting(fitMode);
+        r.setMarkupText(markup);
+        Graphics2D spy = spyGraphics((int) w + 200, (int) h + 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, w, h));
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(0)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            return gv.getAllValues().stream()
+                    .mapToDouble(v -> v.getVisualBounds().getWidth())
+                    .sum();
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    private static List<LayoutSegment> layoutAligned(String markup, int align,
+            double w, double h) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setAlignment(align);
+        r.setMarkupText(markup);
+        List<LayoutSegment> segments = new ArrayList<>();
+        try (GraphicsHandle gh = new GraphicsHandle((int) w + 100, (int) h + 100)) {
+            r.appendSegments(gh.g, new Rectangle2D.Double(0, 0, w, h), segments);
+        }
+        return segments;
+    }
+
+    private static double averageLineGap(String markup, int fitMode,
+            double w, double h) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTextFitting(fitMode);
+        r.setMarkupText(markup);
+        List<LayoutSegment> segments = new ArrayList<>();
+        try (GraphicsHandle gh = new GraphicsHandle((int) w + 200, (int) h + 200)) {
+            r.appendSegments(gh.g, new Rectangle2D.Double(0, 0, w, h), segments);
+        }
+        List<Double> lineYs = new ArrayList<>();
+        for (LayoutSegment s : segments) {
+            if (s.isStartOfLine()) {
+                lineYs.add((double) s.getYOffset());
+            }
+        }
+        if (lineYs.size() < 2) {
+            return 0;
+        }
+        double total = 0;
+        for (int i = 1; i < lineYs.size(); i++) {
+            total += lineYs.get(i) - lineYs.get(i - 1);
+        }
+        return total / (lineYs.size() - 1);
+    }
+
+    private static String repeat(String s, int times) {
+        StringBuilder sb = new StringBuilder(s.length() * times);
+        for (int i = 0; i < times; i++) {
+            sb.append(s);
+        }
+        return sb.toString();
     }
 
     // ---- Built-in / replacement tags --------------------------------
