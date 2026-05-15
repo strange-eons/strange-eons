@@ -1,7 +1,9 @@
 package ca.cgjennings.layout;
 
+import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.Paint;
 import java.awt.font.GlyphVector;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
@@ -633,6 +635,199 @@ class MarkupRendererTest {
     private static Graphics2D spyGraphics(int w, int h) {
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         return spy(img.createGraphics());
+    }
+
+    // ---- Parametric tags --------------------------------------------
+    //
+    // Parametric tags (registered by createDefaultParametricStyleMap)
+    // take parameters after the tag name and produce a TextStyle from
+    // a factory. These tests verify the registration is intact and
+    // that the tag effects show up in the rendered output. Effects
+    // observable through the Graphics2D spy:
+    //   - <color ...>  → setPaint(Color)
+    //   - <size N>     → setFont(Font with size related to N)
+    //   - <family X>   → setFont(Font with family X)
+
+    @Test
+    void defaultParametricTagsAreRegistered() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertNotNull(r.getParametricStyleForTag("color"));
+        assertNotNull(r.getParametricStyleForTag("colour"));
+        assertNotNull(r.getParametricStyleForTag("bgcolor"));
+        assertNotNull(r.getParametricStyleForTag("bgcolour"));
+        assertNotNull(r.getParametricStyleForTag("size"));
+        assertNotNull(r.getParametricStyleForTag("family"));
+        assertNotNull(r.getParametricStyleForTag("tracking"));
+        assertNotNull(r.getParametricStyleForTag("width"));
+        assertNotNull(r.getParametricStyleForTag("weight"));
+    }
+
+    @Test
+    void getParametricStyleForUnknownTagReturnsNull() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertNull(r.getParametricStyleForTag("no-such-tag"));
+    }
+
+    @Test
+    void colorTagAppliesForegroundColor() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello <color FF0000>red</color> world.");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<Paint> paintCaptor = ArgumentCaptor.forClass(Paint.class);
+            verify(spy, atLeast(1)).setPaint(paintCaptor.capture());
+
+            boolean sawRed = paintCaptor.getAllValues().stream()
+                    .filter(p -> p instanceof Color)
+                    .map(p -> (Color) p)
+                    .anyMatch(c -> c.getRed() == 255 && c.getGreen() == 0 && c.getBlue() == 0);
+            assertTrue(sawRed,
+                    "expected setPaint(Color(255,0,0)) for <color FF0000>; got "
+                            + paintCaptor.getAllValues());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void colourTagIsAliasForColorTag() {
+        // British and American spellings should both work and produce
+        // the same effect.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<colour 00FF00>green</colour>");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<Paint> paintCaptor = ArgumentCaptor.forClass(Paint.class);
+            verify(spy, atLeast(1)).setPaint(paintCaptor.capture());
+
+            boolean sawGreen = paintCaptor.getAllValues().stream()
+                    .filter(p -> p instanceof Color)
+                    .map(p -> (Color) p)
+                    .anyMatch(c -> c.getRed() == 0 && c.getGreen() == 255 && c.getBlue() == 0);
+            assertTrue(sawGreen,
+                    "expected setPaint(Color(0,255,0)) for <colour 00FF00>");
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void sizeTagChangesFontSize() {
+        // Default size is 9pt. Size 24 produces a clearly larger
+        // font; verify a non-default size appears in the rendered
+        // glyph vectors.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("normal <size 24>large</size> normal");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+
+            // Default style is Serif 9pt (set in the constructor).
+            // Size 24 should produce a noticeably larger glyph-vector
+            // font.
+            boolean sawLarger = gv.getAllValues().stream()
+                    .map(GlyphVector::getFont)
+                    .anyMatch(f -> f.getSize2D() > 12f);
+            assertTrue(sawLarger,
+                    "expected at least one glyph vector with size > 12pt; got sizes "
+                            + gv.getAllValues().stream()
+                                    .map(GlyphVector::getFont)
+                                    .map(Font::getSize2D)
+                                    .toList());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void familyTagChangesFontFamily() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("normal <family Monospaced>mono</family> normal");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+
+            boolean sawMono = gv.getAllValues().stream()
+                    .map(GlyphVector::getFont)
+                    .map(Font::getFamily)
+                    .anyMatch("Monospaced"::equals);
+            assertTrue(sawMono,
+                    "expected at least one glyph vector with Monospaced family; got "
+                            + gv.getAllValues().stream()
+                                    .map(GlyphVector::getFont)
+                                    .map(Font::getFamily)
+                                    .toList());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void invalidColorTagDoesNotThrow() {
+        // The factory returns null for unparseable parameters; the
+        // renderer should fall through gracefully and render the
+        // content without a color change rather than crashing.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello <color not-a-color>foo</color> world.");
+
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void invalidSizeTagDoesNotThrow() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello <size garbage>foo</size> world.");
+
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void nestedParametricTagsCompose() {
+        // <color RED><size 20>foo</size></color> — both effects should
+        // apply to the inner content.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<color 0000FF><size 20>both</size></color>");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<Paint> paintCaptor = ArgumentCaptor.forClass(Paint.class);
+            verify(spy, atLeast(1)).setPaint(paintCaptor.capture());
+
+            boolean sawBlue = paintCaptor.getAllValues().stream()
+                    .filter(p -> p instanceof Color)
+                    .map(p -> (Color) p)
+                    .anyMatch(c -> c.getRed() == 0 && c.getGreen() == 0 && c.getBlue() == 255);
+            assertTrue(sawBlue, "expected blue paint from outer <color> tag");
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            boolean sawLarger = gv.getAllValues().stream()
+                    .map(GlyphVector::getFont)
+                    .anyMatch(f -> f.getSize2D() > 12f);
+            assertTrue(sawLarger, "expected larger font from inner <size> tag");
+        } finally {
+            spy.dispose();
+        }
     }
 
     // ---- Test scaffolding --------------------------------------------
