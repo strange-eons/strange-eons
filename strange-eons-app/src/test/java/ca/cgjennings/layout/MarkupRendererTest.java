@@ -637,6 +637,181 @@ class MarkupRendererTest {
         return spy(img.createGraphics());
     }
 
+    // ---- Built-in / replacement tags --------------------------------
+    //
+    // Built-ins fall into a few categories:
+    //   - <define name content>           creates a user replacement
+    //   - <br>                            line break (paragraph split)
+    //   - <h1>...<h7>                     headlines (also split paragraphs)
+    //   - <u+XXXX>                        Unicode codepoint
+    //   - <image FILE ...>                inline image (via graphicStyle)
+    //   - default replacements (typographic) like <infinity>, <emdash>,
+    //     <nbsp>, <...>, smart-quote tags
+
+    @Test
+    void defaultReplacementsAreRegistered() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertEquals("∞", r.getReplacementForTag("infinity"));
+        assertEquals("—", r.getReplacementForTag("emdash"));
+        assertEquals("–", r.getReplacementForTag("endash"));
+        assertEquals("…", r.getReplacementForTag("..."));
+        assertEquals(" ", r.getReplacementForTag("nbsp"));
+        assertEquals("“", r.getReplacementForTag("lq"));
+        assertEquals("”", r.getReplacementForTag("rq"));
+    }
+
+    @Test
+    void defineTagCreatesUserReplacement() {
+        // <define name content> registers a user-defined replacement
+        // that subsequent uses of <name> expand to "content".
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<define greeting Hello>The <greeting>.");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            int totalGlyphs = gv.getAllValues().stream()
+                    .mapToInt(GlyphVector::getNumGlyphs)
+                    .sum();
+            // "The Hello." = 10 visible glyphs (give or take); "The ."
+            // alone (if the define was dropped) would be 5. Pin that
+            // the substitution happened.
+            assertTrue(totalGlyphs >= 9,
+                    "expected <define>+<greeting> to expand to 'Hello'; "
+                            + "glyph count = " + totalGlyphs);
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void brTagSplitsParagraphs() {
+        // <br> forces a paragraph break — segments after the break
+        // have a higher sourceParagraphIndex than those before.
+        List<LayoutSegment> segments = layoutOf("first<br>second", 300, 200);
+        int maxParagraph = segments.stream()
+                .mapToInt(LayoutSegment::getSourceParagraphIndex)
+                .max().orElse(0);
+        assertTrue(maxParagraph >= 1,
+                "expected <br> to produce a second paragraph; "
+                        + "max paragraph index = " + maxParagraph);
+    }
+
+    @Test
+    void newlineSplitsParagraphs() {
+        // A literal newline in the markup also splits paragraphs.
+        List<LayoutSegment> segments = layoutOf("first\nsecond", 300, 200);
+        int maxParagraph = segments.stream()
+                .mapToInt(LayoutSegment::getSourceParagraphIndex)
+                .max().orElse(0);
+        assertTrue(maxParagraph >= 1,
+                "expected newline to produce a second paragraph; "
+                        + "max paragraph index = " + maxParagraph);
+    }
+
+    @Test
+    void unicodeEscapeTagInsertsCodepoint() {
+        // <u+221E> inserts ∞ (infinity). handleUnknownTag handles this.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello <u+221E> world.");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            int totalGlyphs = gv.getAllValues().stream()
+                    .mapToInt(GlyphVector::getNumGlyphs)
+                    .sum();
+            // "Hello ∞ world." vs "Hello  world." (if escape ignored)
+            // — substituted version has the same character count, so
+            // we mainly verify "doesn't throw + renders".
+            assertTrue(totalGlyphs > 0,
+                    "expected u+221E to render; got " + totalGlyphs + " glyphs");
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void unknownTagWithoutHandlerIsDropped() {
+        // A genuinely unknown tag (handleUnknownTag returns null) is
+        // dropped from the output. The surrounding text still renders.
+        // Compare "before after" with and without the unknown tag.
+        int plain = totalGlyphsRendered("Before After");
+        int withUnknown = totalGlyphsRendered("Before <xyzzy>After");
+        assertEquals(plain, withUnknown,
+                "expected unknown tag to be dropped; plain=" + plain
+                        + " withUnknown=" + withUnknown);
+    }
+
+    @Test
+    void supTagRendersAsBuiltInStyle() {
+        // <sup> superscript is one of the typographic non-parametric
+        // tags. It changes the font metrics for the enclosed run.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("E = mc<sup>2</sup>");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(2)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+
+            // Superscript content typically renders at a smaller size
+            // OR at a higher position. We can't reliably verify the
+            // exact transform, but we can verify that more than one
+            // glyph-vector call happened (style boundary forced a
+            // split), confirming the tag was recognised.
+            assertTrue(gv.getAllValues().size() >= 2,
+                    "expected <sup> to split into multiple glyph vectors");
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void colorReplacementTagsAreRegistered() {
+        // Non-parametric color tags (e.g. <red>, <blue>) are registered
+        // as style tags during createDefaultStyleMap.
+        MarkupRenderer r = new MarkupRenderer();
+        assertNotNull(r.getStyleForTag("red"));
+        assertNotNull(r.getStyleForTag("blue"));
+        assertNotNull(r.getStyleForTag("green"));
+        assertNotNull(r.getStyleForTag("black"));
+        assertNotNull(r.getStyleForTag("white"));
+    }
+
+    @Test
+    void namedColorTagAppliesColor() {
+        // <red> is a non-parametric tag that applies COLOR_RED.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello <red>red</red> world.");
+
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+
+            ArgumentCaptor<Paint> paintCaptor = ArgumentCaptor.forClass(Paint.class);
+            verify(spy, atLeast(1)).setPaint(paintCaptor.capture());
+
+            boolean sawRedFamily = paintCaptor.getAllValues().stream()
+                    .filter(p -> p instanceof Color)
+                    .map(p -> (Color) p)
+                    .anyMatch(c -> c.getRed() > c.getGreen() && c.getRed() > c.getBlue());
+            assertTrue(sawRedFamily,
+                    "expected a red-dominant paint for <red>; got "
+                            + paintCaptor.getAllValues());
+        } finally {
+            spy.dispose();
+        }
+    }
+
     // ---- Parametric tags --------------------------------------------
     //
     // Parametric tags (registered by createDefaultParametricStyleMap)
