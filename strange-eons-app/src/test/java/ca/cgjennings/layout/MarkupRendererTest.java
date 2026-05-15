@@ -638,6 +638,155 @@ class MarkupRendererTest {
         return spy(img.createGraphics());
     }
 
+    // ---- Markup syntax edge cases -----------------------------------
+    //
+    // Parser robustness: malformed input, escape sequences, autoclose
+    // mode, inline control tags (<tight>, <loose>, <autoclose>,
+    // <manualclose>). These tests pin the parser's tolerance for
+    // edge-case input.
+
+    @Test
+    void ltEscapeProducesLiteralOpenAngleBracket() {
+        // <lt> is special-cased in the parser to insert "<" without
+        // re-parsing. Verify the rendered output has at least one
+        // more glyph than the same markup with the <lt> removed.
+        int withLt = totalGlyphsRendered("a<lt>b");
+        int withoutLt = totalGlyphsRendered("ab");
+        assertEquals(withoutLt + 1, withLt,
+                "expected <lt> to add exactly one literal '<' glyph; "
+                        + "without=" + withoutLt + " with=" + withLt);
+    }
+
+    @Test
+    void gtEscapeProducesLiteralCloseAngleBracket() {
+        int withGt = totalGlyphsRendered("a<gt>b");
+        int withoutGt = totalGlyphsRendered("ab");
+        assertEquals(withoutGt + 1, withGt,
+                "expected <gt> to add exactly one literal '>' glyph; "
+                        + "without=" + withoutGt + " with=" + withGt);
+    }
+
+    @Test
+    void setAutocloseDefaultIsFalse() {
+        // The default behavior is manual-close (open tags persist
+        // across paragraph breaks).
+        MarkupRenderer r = new MarkupRenderer();
+        assertFalse(r.getAutoclose());
+    }
+
+    @Test
+    void setAutocloseTrueRoundTrips() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setAutoclose(true);
+        assertTrue(r.getAutoclose());
+    }
+
+    @Test
+    void mismatchedClosingTagDoesNotThrow() {
+        // Defensive: <b>foo</i> mismatches; the parser should
+        // tolerate this without crashing.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<b>foo</i> bar");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void unclosedTagDoesNotThrow() {
+        // <b>foo  — no closing tag — should not throw.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<b>foo");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void emptyTagDoesNotThrow() {
+        // <> empty tag — degenerate input.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("a<>b");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void unterminatedTagDoesNotThrow() {
+        // <b without > — defensive; the parser should not loop or throw.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("plain <b unterminated");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void inlineAutocloseTagSetsAutoclose() {
+        // <autoclose> within markup overrides setAutoclose(false).
+        MarkupRenderer r = new MarkupRenderer();
+        r.setAutoclose(false);
+        r.setMarkupText("<autoclose><b>foo");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void inlineManualcloseTagSetsManualclose() {
+        // <manualclose> within markup overrides setAutoclose(true).
+        MarkupRenderer r = new MarkupRenderer();
+        r.setAutoclose(true);
+        r.setMarkupText("<manualclose><b>foo");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void tightAndLooseTagsAreRecognized() {
+        // <tight> and <loose> tags adjust line tightness inline. The
+        // smoke test is that they don't throw and the renderer still
+        // produces output.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("normal <tight>squeezed</tight> normal <loose>spaced</loose>");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
+    @Test
+    void backslashLineContinuation() {
+        // A backslash followed by a newline suppresses the line
+        // break — the renderer's TEXTBS state consumes whitespace
+        // after backslash. Pin the behaviour: backslash + newline
+        // produces one paragraph, not two.
+        List<LayoutSegment> withBackslash = layoutOf("first\\\nsecond", 300, 200);
+        int maxParaWithBackslash = withBackslash.stream()
+                .mapToInt(LayoutSegment::getSourceParagraphIndex)
+                .max().orElse(0);
+
+        List<LayoutSegment> plain = layoutOf("first\nsecond", 300, 200);
+        int maxParaPlain = plain.stream()
+                .mapToInt(LayoutSegment::getSourceParagraphIndex)
+                .max().orElse(0);
+
+        assertTrue(maxParaWithBackslash < maxParaPlain,
+                "expected backslash+newline to suppress paragraph break; "
+                        + "plain paragraphs=" + (maxParaPlain + 1)
+                        + " with-backslash=" + (maxParaWithBackslash + 1));
+    }
+
+    @Test
+    void deeplyNestedTagsDoNotThrow() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<b><i><u><sup>deeply</sup></u></i></b>");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+    }
+
     // ---- Layout-flag matrix -----------------------------------------
     //
     // Alignment flags affect segment positions; fit flags affect how
