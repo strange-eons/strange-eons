@@ -7,6 +7,8 @@ import java.awt.Paint;
 import java.awt.font.GlyphVector;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
+import java.text.AttributedCharacterIterator;
+import java.text.CharacterIterator;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -786,6 +788,157 @@ class MarkupRendererTest {
         List<Font> fonts = fontsRendered(markup);
         assertTrue(fonts.stream().allMatch(f -> f.isBold() && f.isItalic()),
                 "expected nested styles to combine; got " + fonts);
+    }
+
+    // ---- Punctuation replacement ------------------------------------
+    //
+    // Straight quotes, hyphen runs, and period runs are replaced with
+    // typographic forms as the parser emits text. Assertions read the
+    // parsed paragraphs directly.
+
+    @Test
+    void doubleQuotesBecomeCurly() {
+        assertEquals("“Hi”", parsedText("\"Hi\""));
+    }
+
+    @Test
+    void singleQuotesBecomeCurly() {
+        assertEquals("‘Hi’", parsedText("'Hi'"));
+    }
+
+    @Test
+    void apostropheBecomesRightSingleQuote() {
+        assertEquals("don’t", parsedText("don't"));
+    }
+
+    @Test
+    void leadingApostropheIsTreatedAsOpenQuote() {
+        assertEquals("‘tis", parsedText("'tis"));
+    }
+
+    @Test
+    void nestedQuotesAlternate() {
+        assertEquals("“she said ‘no’”",
+                parsedText("\"she said 'no'\""));
+    }
+
+    @Test
+    void quoteAfterDashOpensWhenNoQuoteIsOpen() {
+        assertEquals("well-“maybe”", parsedText("well-\"maybe\""));
+    }
+
+    @Test
+    void quoteAfterDashClosesWhenQuoteIsOpen() {
+        assertEquals("“wait-”", parsedText("\"wait-\""));
+    }
+
+    @Test
+    void quoteAfterOpenParenthesisIsTreatedAsClose() {
+        // Only whitespace and dashes before a quote select the open form.
+        assertEquals("(”x”)", parsedText("(\"x\")"));
+    }
+
+    @Test
+    void openQuoteDepthResetsEachParagraph() {
+        // The dangling open quote in the first paragraph does not make
+        // the dash-adjacent quote in the second one a close quote.
+        assertEquals("“a\nb-“", parsedText("\"a\nb-\""));
+    }
+
+    @Test
+    void doubleHyphenBecomesEnDash() {
+        assertEquals("1–2", parsedText("1--2"));
+    }
+
+    @Test
+    void tripleHyphenBecomesEmDash() {
+        assertEquals("a—b", parsedText("a---b"));
+    }
+
+    @Test
+    void hyphenAfterEnDashBecomesEmDash() {
+        assertEquals("a—b", parsedText("a–-b"));
+    }
+
+    @Test
+    void singleHyphenIsUnchanged() {
+        assertEquals("well-known", parsedText("well-known"));
+    }
+
+    @Test
+    void quadrupleHyphenLeavesTrailingHyphen() {
+        assertEquals("a—-b", parsedText("a----b"));
+    }
+
+    @Test
+    void triplePeriodBecomesEllipsis() {
+        assertEquals("wait…", parsedText("wait..."));
+    }
+
+    @Test
+    void ellipsisAtStartOfParagraph() {
+        assertEquals("…and then", parsedText("...and then"));
+    }
+
+    @Test
+    void enDashAtStartOfParagraph() {
+        assertEquals("– aside", parsedText("-- aside"));
+    }
+
+    @Test
+    void doublePeriodIsUnchanged() {
+        assertEquals("wait..", parsedText("wait.."));
+    }
+
+    @Test
+    void quadruplePeriodLeavesTrailingPeriod() {
+        assertEquals("wait….", parsedText("wait...."));
+    }
+
+    @Test
+    void noPunctuationTagDisablesReplacement() {
+        assertEquals("\"a--b...\" “c”",
+                parsedText("<no punctuation>\"a--b...\"</no punctuation> \"c\""));
+    }
+
+    @Test
+    void noPunctuationTagNests() {
+        assertEquals("\"a\" \"b\" “c”", parsedText(
+                "<no punctuation><no punctuation>\"a\"</no punctuation> \"b\""
+                        + "</no punctuation> \"c\""));
+    }
+
+    @Test
+    void noPunctuationTagSpansParagraphs() {
+        assertEquals("a--b\nc--d", parsedText("<no punctuation>a--b\nc--d"));
+    }
+
+    @Test
+    void punctuationInsideTagIsNotReplaced() {
+        assertEquals("Alice", parsedText("<define who \"Alice\"><who>"));
+    }
+
+    /**
+     * Parses {@code markup} and returns the resulting paragraph text,
+     * one line per paragraph.
+     */
+    private static String parsedText(String markup) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(markup);
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.measure(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        }
+        StringBuilder b = new StringBuilder();
+        for (MarkupRenderer.StyledParagraph p : r.getStyledText()) {
+            if (b.length() > 0) {
+                b.append('\n');
+            }
+            AttributedCharacterIterator it = p.getIterator();
+            for (char c = it.first(); c != CharacterIterator.DONE; c = it.next()) {
+                b.append(c);
+            }
+        }
+        return b.toString();
     }
 
     // ---- Layout-flag matrix -----------------------------------------
