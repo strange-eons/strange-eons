@@ -132,13 +132,11 @@ class GenderAwareMarkupRendererTest {
         // <u+221E> infinity escape (handled by super.handleUnknownTag)
         // should still resolve in the subclass.
         GenderAwareMarkupRenderer r = new GenderAwareMarkupRenderer();
-        r.setMarkupText("a <u+221E> b");
-        Graphics2D g = newImage(400, 200).createGraphics();
-        try {
-            r.draw(g, new Rectangle2D.Double(0, 0, 300, 100));
-        } finally {
-            g.dispose();
-        }
+        int withTag = renderAndCountGlyphs(r, "a <u+221E> b");
+        int plain = renderAndCountGlyphs(new MarkupRenderer(), "a ∞ b");
+        assertEquals(plain, withTag,
+                "expected <u+221E> to resolve to one glyph; "
+                        + "withTag=" + withTag + " plain=" + plain);
     }
 
     @Test
@@ -159,14 +157,11 @@ class GenderAwareMarkupRendererTest {
         // </foo> looks like a close tag, not a gender tag. The
         // handler skips when slash is at position < 1.
         GenderAwareMarkupRenderer r = new GenderAwareMarkupRenderer();
-        r.setMarkupText("a </tag> b");
-        // Should not throw.
-        Graphics2D g = newImage(400, 200).createGraphics();
-        try {
-            r.draw(g, new Rectangle2D.Double(0, 0, 300, 100));
-        } finally {
-            g.dispose();
-        }
+        int withTag = renderAndCountGlyphs(r, "a </tag> b");
+        int plain = renderAndCountGlyphs(new MarkupRenderer(), "a  b");
+        assertEquals(plain, withTag,
+                "expected </tag> to be dropped, not split as a gender tag; "
+                        + "withTag=" + withTag + " plain=" + plain);
     }
 
     // ---- Capitalize helper -------------------------------------------

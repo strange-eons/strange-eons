@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
@@ -211,107 +212,82 @@ class MarkupRendererTest {
     // ---- Drawing (smoke test) ----------------------------------------
 
     @Test
-    void drawPlainTextReturnsNonNegativeHeight() {
+    void drawPlainTextReturnsPositiveHeight() {
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("Hello, world.");
         Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
         try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
             double height = r.draw(gh.g, region);
-            // Implementation contract is "the height in pixels actually
-            // consumed". For non-empty markup, > 0.
-            assertEquals(height, height);  // assert no NaN
+            assertTrue(Double.isFinite(height) && height > 0,
+                    "expected positive finite height; got " + height);
         }
     }
 
     @Test
-    void drawEmptyMarkupReturnsZero() {
+    void drawEmptyMarkupReturnsFiniteHeight() {
+        // Empty markup still lays out one padding line; see
+        // MarkupRendererBugsTest for the expected-zero case.
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("");
         Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
         try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
-            double height = r.draw(gh.g, region);
-            // Pin the current behaviour for empty markup. Adjust the
-            // expected value once verified against real output.
-            assertEquals(height, height);  // assert no NaN
+            double drawn = r.draw(gh.g, region);
+            assertTrue(Double.isFinite(drawn) && drawn >= 0,
+                    "expected non-negative finite height; got " + drawn);
         }
     }
 
     @Test
     void measureReturnsHeightWithoutDrawing() {
+        // measure() reports the covered height; draw() reports where
+        // the next line would start, so it includes trailing leading.
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("Hello, world.");
         Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
-        try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
-            double height = r.measure(gh.g, region);
-            assertEquals(height, height);  // assert no NaN
+        Graphics2D spy = spyGraphics(300, 200);
+        try {
+            double measured = r.measure(spy, region);
+            verify(spy, never()).drawGlyphVector(any(), anyFloat(), anyFloat());
+            assertTrue(Double.isFinite(measured) && measured > 0,
+                    "expected positive finite height; got " + measured);
+            double drawn = r.draw(spy, region);
+            assertTrue(measured <= drawn,
+                    "expected measured height <= next-line y; measured="
+                            + measured + " drawn=" + drawn);
+        } finally {
+            spy.dispose();
         }
     }
 
     @Test
-    void drawAsSingleLineReturnsWidth() {
+    void drawAsSingleLineReturnsWidthWithinRegion() {
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("Hello, world.");
         Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 30);
         try (GraphicsHandle gh = new GraphicsHandle(300, 100)) {
             double width = r.drawAsSingleLine(gh.g, region);
-            assertEquals(width, width);  // assert no NaN
+            assertTrue(Double.isFinite(width) && width > 0 && width <= region.getWidth(),
+                    "expected width in (0, " + region.getWidth() + "]; got " + width);
         }
     }
 
     @Test
-    void drawWithBoldTagDoesNotThrow() {
+    void drawAsSingleLineShrinksOverlongTextIntoRegion() {
         MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("Hello, <b>bold</b> world.");
-        Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
-        try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
-            r.draw(gh.g, region);
+        r.setMarkupText(repeat("Hello, world. ", 10));
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 100, 30);
+        try (GraphicsHandle gh = new GraphicsHandle(300, 100)) {
+            double width = r.drawAsSingleLine(gh.g, region);
+            assertTrue(width > 0 && width <= region.getWidth(),
+                    "expected width in (0, " + region.getWidth() + "]; got " + width);
         }
     }
 
     @Test
-    void drawWithItalicTagDoesNotThrow() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("Hello, <i>italic</i> world.");
-        Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
-        try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
-            r.draw(gh.g, region);
-        }
-    }
-
-    @Test
-    void drawWithNestedTagsDoesNotThrow() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("Hello, <b><i>bold italic</i></b> world.");
-        Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
-        try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
-            r.draw(gh.g, region);
-        }
-    }
-
-    @Test
-    void drawWithReplacementTagSubstitutes() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setReplacementForTag("name", "Alice");
-        r.setMarkupText("Hello, <name>.");
-        Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
-        try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
-            r.draw(gh.g, region);
-            // Verifying the substitution actually happened needs
-            // pixel-level inspection or a parser-level seam; this
-            // smoke test pins that the path doesn't throw. The
-            // visible-substitution check is a follow-up after the
-            // parser/layout split exposes a seam.
-        }
-    }
-
-    @Test
-    void drawWithUnknownTagDoesNotThrow() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("Hello, <unknown>foo</unknown> world.");
-        Rectangle2D region = new Rectangle2D.Double(0, 0, 200, 100);
-        try (GraphicsHandle gh = new GraphicsHandle(300, 200)) {
-            r.draw(gh.g, region);
-        }
+    void nestedTagsCombineStyles() {
+        List<Font> fonts = fontsRendered("Hello, <b><i>bold italic</i></b> world.");
+        assertTrue(fonts.stream().anyMatch(f -> f.isBold() && f.isItalic()),
+                "expected a bold italic glyph vector; got " + fonts);
     }
 
     // ---- Layout-segment introspection --------------------------------
@@ -633,6 +609,25 @@ class MarkupRendererTest {
         }
     }
 
+    private List<Font> fontsRendered(String markup) {
+        return fontsRendered(new MarkupRenderer(), markup);
+    }
+
+    private List<Font> fontsRendered(MarkupRenderer r, String markup) {
+        r.setMarkupText(markup);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(0)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            return gv.getAllValues().stream()
+                    .map(GlyphVector::getFont)
+                    .toList();
+        } finally {
+            spy.dispose();
+        }
+    }
+
     private static Graphics2D spyGraphics(int w, int h) {
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         return spy(img.createGraphics());
@@ -682,78 +677,84 @@ class MarkupRendererTest {
     }
 
     @Test
-    void mismatchedClosingTagDoesNotThrow() {
-        // Defensive: <b>foo</i> mismatches; the parser should
-        // tolerate this without crashing.
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("<b>foo</i> bar");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+    void mismatchedClosingTagIsIgnored() {
+        // </i> closes nothing, so bold continues to the end.
+        assertEquals(totalGlyphsRendered("foo bar"), totalGlyphsRendered("<b>foo</i> bar"));
+        List<Font> fonts = fontsRendered("<b>foo</i> bar");
+        assertTrue(fonts.stream().allMatch(Font::isBold),
+                "expected bold to run to the end; got " + fonts);
     }
 
     @Test
-    void unclosedTagDoesNotThrow() {
-        // <b>foo  — no closing tag — should not throw.
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("<b>foo");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+    void unclosedTagAppliesToEnd() {
+        assertEquals(totalGlyphsRendered("foo"), totalGlyphsRendered("<b>foo"));
+        List<Font> fonts = fontsRendered("<b>foo");
+        assertTrue(fonts.stream().allMatch(Font::isBold),
+                "expected unclosed <b> to apply to the end; got " + fonts);
     }
 
     @Test
-    void emptyTagDoesNotThrow() {
-        // <> empty tag — degenerate input.
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("a<>b");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+    void emptyTagIsDropped() {
+        assertEquals(totalGlyphsRendered("ab"), totalGlyphsRendered("a<>b"));
     }
 
     @Test
-    void unterminatedTagDoesNotThrow() {
-        // <b without > — defensive; the parser should not loop or throw.
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("plain <b unterminated");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+    void unterminatedTagDropsRestOfLine() {
+        assertEquals(totalGlyphsRendered("plain "), totalGlyphsRendered("plain <b unterminated"));
     }
 
     @Test
-    void inlineAutocloseTagSetsAutoclose() {
-        // <autoclose> within markup overrides setAutoclose(false).
+    void inlineAutocloseTagStopsStylesAtLineEnd() {
         MarkupRenderer r = new MarkupRenderer();
         r.setAutoclose(false);
-        r.setMarkupText("<autoclose><b>foo");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+        List<Font> fonts = fontsRendered(r, "<autoclose><b>foo\nbar");
+        assertTrue(fonts.get(0).isBold(), "expected first line bold; got " + fonts);
+        assertFalse(fonts.get(fonts.size() - 1).isBold(),
+                "expected <b> to close at end of first line; got " + fonts);
     }
 
     @Test
-    void inlineManualcloseTagSetsManualclose() {
-        // <manualclose> within markup overrides setAutoclose(true).
+    void inlineManualcloseTagCarriesStylesAcrossLines() {
         MarkupRenderer r = new MarkupRenderer();
         r.setAutoclose(true);
-        r.setMarkupText("<manualclose><b>foo");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+        List<Font> fonts = fontsRendered(r, "<manualclose><b>foo\nbar");
+        assertTrue(fonts.stream().allMatch(Font::isBold),
+                "expected <b> to carry over to the second line; got " + fonts);
     }
 
     @Test
-    void tightAndLooseTagsAreRecognized() {
-        // <tight> and <loose> tags adjust line tightness inline. The
-        // smoke test is that they don't throw and the renderer still
-        // produces output.
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("normal <tight>squeezed</tight> normal <loose>spaced</loose>");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+    void setAutocloseControlsStyleCarryOver() {
+        MarkupRenderer auto = new MarkupRenderer();
+        auto.setAutoclose(true);
+        assertFalse(fontsRendered(auto, "<b>foo\nbar").stream().allMatch(Font::isBold));
+
+        MarkupRenderer manual = new MarkupRenderer();
+        manual.setAutoclose(false);
+        assertTrue(fontsRendered(manual, "<b>foo\nbar").stream().allMatch(Font::isBold));
+    }
+
+    @Test
+    void tightTagRemovesParagraphLeading() {
+        double normal = secondParagraphY("first\nsecond");
+        double tight = secondParagraphY("<tight>first\nsecond");
+        assertTrue(tight < normal,
+                "expected <tight> to reduce paragraph gap; normal=" + normal + " tight=" + tight);
+    }
+
+    @Test
+    void looseTagAddsParagraphLeading() {
+        double normal = secondParagraphY("first\nsecond");
+        double loose = secondParagraphY("<loose>first\nsecond");
+        assertTrue(loose > normal,
+                "expected <loose> to widen paragraph gap; normal=" + normal + " loose=" + loose);
+    }
+
+    private static double secondParagraphY(String markup) {
+        return layoutOf(markup, 300, 200).stream()
+                .filter(s -> s.getSourceParagraphIndex() == 1)
+                .mapToDouble(LayoutSegment::getYOffset)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no second paragraph in " + markup));
     }
 
     @Test
@@ -779,12 +780,12 @@ class MarkupRendererTest {
     }
 
     @Test
-    void deeplyNestedTagsDoNotThrow() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("<b><i><u><sup>deeply</sup></u></i></b>");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+    void deeplyNestedTagsRenderAllContent() {
+        String markup = "<b><i><u><sup>deeply</sup></u></i></b>";
+        assertEquals(totalGlyphsRendered("deeply"), totalGlyphsRendered(markup));
+        List<Font> fonts = fontsRendered(markup);
+        assertTrue(fonts.stream().allMatch(f -> f.isBold() && f.isItalic()),
+                "expected nested styles to combine; got " + fonts);
     }
 
     // ---- Layout-flag matrix -----------------------------------------
@@ -1334,26 +1335,34 @@ class MarkupRendererTest {
     }
 
     @Test
-    void invalidColorTagDoesNotThrow() {
+    void invalidColorTagRendersContentInDefaultColor() {
         // The factory returns null for unparseable parameters; the
-        // renderer should fall through gracefully and render the
-        // content without a color change rather than crashing.
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("Hello <color not-a-color>foo</color> world.");
+        // content renders without a color change.
+        String markup = "Hello <color not-a-color>foo</color> world.";
+        assertEquals(totalGlyphsRendered("Hello foo world."), totalGlyphsRendered(markup));
 
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(markup);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, new Rectangle2D.Double(0, 0, 300, 100));
+            ArgumentCaptor<Paint> paints = ArgumentCaptor.forClass(Paint.class);
+            verify(spy, atLeast(0)).setPaint(paints.capture());
+            assertTrue(paints.getAllValues().stream().allMatch(Color.BLACK::equals),
+                    "expected only the default paint; got " + paints.getAllValues());
+        } finally {
+            spy.dispose();
         }
     }
 
     @Test
-    void invalidSizeTagDoesNotThrow() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("Hello <size garbage>foo</size> world.");
-
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
-        }
+    void invalidSizeTagFallsBackToFactoryDefault() {
+        // FontSizeStyleFactory substitutes its own 10pt default rather
+        // than leaving the renderer's 9pt default in place.
+        String markup = "Hello <size garbage>foo</size> world.";
+        assertEquals(totalGlyphsRendered("Hello foo world."), totalGlyphsRendered(markup));
+        List<Font> fonts = fontsRendered(markup);
+        assertEquals(List.of(9f, 10f, 9f), fonts.stream().map(Font::getSize2D).toList());
     }
 
     @Test
