@@ -1018,6 +1018,207 @@ class MarkupRendererTest {
                         + " and bottom=" + bottomY + "; got " + middleY);
     }
 
+    // ---- Inline alignment tags --------------------------------------
+    //
+    // Horizontal tags set the alignment of the paragraph they end up
+    // in; they are not scoped, so closing tags have no effect.
+    // Vertical tags apply to the whole block, and the last one wins.
+
+    private static final int LEFT_TOP = MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_TOP;
+    private static final String WRAPPING_TEXT =
+            "The quick brown fox jumps over the lazy dog again and again.";
+
+    @Test
+    void rightTagRightAligns() {
+        assertEquals(firstX("word", MarkupRenderer.LAYOUT_RIGHT | MarkupRenderer.LAYOUT_TOP),
+                firstX("<right>word", LEFT_TOP), 0.01);
+    }
+
+    @Test
+    void centerTagCenters() {
+        assertEquals(firstX("word", MarkupRenderer.LAYOUT_CENTER | MarkupRenderer.LAYOUT_TOP),
+                firstX("<center>word", LEFT_TOP), 0.01);
+    }
+
+    @Test
+    void centreTagIsAliasForCenter() {
+        assertEquals(firstX("<center>word", LEFT_TOP), firstX("<centre>word", LEFT_TOP), 0.01);
+    }
+
+    @Test
+    void leftTagOverridesDefaultAlignment() {
+        assertEquals(firstX("word", LEFT_TOP),
+                firstX("<left>word", MarkupRenderer.LAYOUT_RIGHT | MarkupRenderer.LAYOUT_TOP), 0.01);
+    }
+
+    @Test
+    void alignmentTagsAreCaseInsensitive() {
+        assertEquals(firstX("<right>word", LEFT_TOP), firstX("<RIGHT>word", LEFT_TOP), 0.01);
+    }
+
+    @Test
+    void alignmentTagMidParagraphAppliesToWholeParagraph() {
+        assertEquals(firstX("<right>word more", LEFT_TOP),
+                firstX("word <right>more", LEFT_TOP), 0.01);
+    }
+
+    @Test
+    void alignmentTagAppliesFromItsParagraphOnward() {
+        List<LayoutSegment> segments = layoutAligned("a\n<right>b\nc", LEFT_TOP, 100, 100);
+        assertTrue(paragraphX(segments, 0) < 50, "first paragraph should stay left");
+        assertTrue(paragraphX(segments, 1) > 50, "second paragraph should be right");
+        assertTrue(paragraphX(segments, 2) > 50, "third paragraph should inherit right");
+    }
+
+    @Test
+    void closingAlignmentTagHasNoEffect() {
+        List<LayoutSegment> segments = layoutAligned("<right>a</right>\nb", LEFT_TOP, 100, 100);
+        assertTrue(paragraphX(segments, 1) > 50,
+                "expected </right> to leave right alignment in place");
+    }
+
+    @Test
+    void bottomTagBottomAligns() {
+        assertEquals(drawYPosition("word", MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM, 200, 200),
+                drawYPosition("<bottom>word", LEFT_TOP, 200, 200), 0.01);
+    }
+
+    @Test
+    void middleTagCentersVertically() {
+        assertEquals(drawYPosition("word", MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_MIDDLE, 200, 200),
+                drawYPosition("<middle>word", LEFT_TOP, 200, 200), 0.01);
+    }
+
+    @Test
+    void topTagOverridesDefaultVerticalAlignment() {
+        assertEquals(drawYPosition("word", LEFT_TOP, 200, 200),
+                drawYPosition("<top>word", MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM, 200, 200),
+                0.01);
+    }
+
+    @Test
+    void lastVerticalTagAppliesToWholeBlock() {
+        assertEquals(drawYPosition("a\nb", LEFT_TOP, 200, 200),
+                drawYPosition("<bottom>a\n<top>b", LEFT_TOP, 200, 200), 0.01);
+    }
+
+    @Test
+    void bottomAlignedOverflowIsClampedToTop() {
+        // Text taller than the region starts at the top rather than
+        // being pushed above it.
+        String tall = repeat("line\n", 20);
+        assertEquals(drawYPosition(tall, LEFT_TOP, 100, 50),
+                drawYPosition(tall, MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM, 100, 50),
+                0.01);
+    }
+
+    @Test
+    void singleLineHonorsVerticalAlignment() {
+        float top = singleLineY("<top>word", 200, 200);
+        float middle = singleLineY("<middle>word", 200, 200);
+        float bottom = singleLineY("<bottom>word", 200, 200);
+        assertTrue(top < middle && middle < bottom,
+                "expected top < middle < bottom; got " + top + ", " + middle + ", " + bottom);
+    }
+
+    @Test
+    void singleLineTallerThanRegionIsClampedToTop() {
+        assertEquals(singleLineY("<top>word", 100, 2),
+                singleLineY("<bottom>word", 100, 2), 0.01);
+    }
+
+    @Test
+    void justifiedTagFillsAllButLastLine() {
+        List<Double> widths = lineWidths("<justified>" + WRAPPING_TEXT, LEFT_TOP);
+        assertTrue(widths.size() >= 3, "need several lines; got " + widths);
+        for (double w : widths.subList(0, widths.size() - 1)) {
+            assertEquals(100, w, 1.0, "expected justified line to fill region; got " + widths);
+        }
+        assertTrue(widths.get(widths.size() - 1) < 99,
+                "expected last line to stay ragged; got " + widths);
+    }
+
+    @Test
+    void textIsRaggedByDefault() {
+        List<Double> widths = lineWidths(WRAPPING_TEXT, LEFT_TOP);
+        assertTrue(widths.subList(0, widths.size() - 1).stream().anyMatch(w -> w < 99),
+                "expected at least one short line; got " + widths);
+    }
+
+    @Test
+    void justifyFlagMatchesJustifiedTag() {
+        assertEquals(lineWidths("<justified>" + WRAPPING_TEXT, LEFT_TOP),
+                lineWidths(WRAPPING_TEXT, LEFT_TOP | MarkupRenderer.LAYOUT_JUSTIFY));
+    }
+
+    @Test
+    void raggedTagDisablesJustifyFlag() {
+        assertEquals(lineWidths(WRAPPING_TEXT, LEFT_TOP),
+                lineWidths("<ragged>" + WRAPPING_TEXT, LEFT_TOP | MarkupRenderer.LAYOUT_JUSTIFY));
+    }
+
+    @Test
+    void horizontalTagPreservesJustification() {
+        assertEquals(lineWidths("<justified>" + WRAPPING_TEXT, LEFT_TOP),
+                lineWidths("<justified><right><left>" + WRAPPING_TEXT, LEFT_TOP));
+    }
+
+    @Test
+    void justificationUsesFinalParserStateForEveryParagraph() {
+        // Each paragraph records its alignment, but layout tests the
+        // justify bit of the parser's state after the last paragraph,
+        // so a later <justified> justifies earlier paragraphs too.
+        double ragged = lineWidths(WRAPPING_TEXT + "\nx", LEFT_TOP, 0).get(0);
+        assertTrue(ragged < 99, "control: expected ragged first line; got " + ragged);
+
+        String markup = WRAPPING_TEXT + "\n<justified>x";
+        List<Double> firstParagraph = lineWidths(markup, LEFT_TOP, 0);
+        assertEquals(100, firstParagraph.get(0), 1.0,
+                "expected first paragraph justified by later tag; got " + firstParagraph);
+    }
+
+    private static float singleLineY(String markup, double w, double h) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(markup);
+        Graphics2D spy = spyGraphics((int) w + 100, (int) h + 100);
+        try {
+            r.drawAsSingleLine(spy, new Rectangle2D.Double(0, 0, w, h));
+            ArgumentCaptor<Float> y = ArgumentCaptor.forClass(Float.class);
+            verify(spy, atLeast(1)).drawGlyphVector(any(GlyphVector.class), anyFloat(), y.capture());
+            return y.getAllValues().get(0);
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    private static float firstX(String markup, int align) {
+        return layoutAligned(markup, align, 100, 50).get(0).getXOffset();
+    }
+
+    private static float paragraphX(List<LayoutSegment> segments, int paragraph) {
+        return segments.stream()
+                .filter(s -> s.getSourceParagraphIndex() == paragraph)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no paragraph " + paragraph))
+                .getXOffset();
+    }
+
+    private static List<Double> lineWidths(String markup, int align) {
+        return lineWidths(markup, align, -1);
+    }
+
+    /**
+     * Visible advance of each laid-out line in a 100-wide region,
+     * optionally restricted to one source paragraph.
+     */
+    private static List<Double> lineWidths(String markup, int align, int paragraph) {
+        return layoutAligned(markup, align, 100, 400).stream()
+                .filter(LayoutSegment::isStartOfLine)
+                .filter(s -> paragraph < 0 || s.getSourceParagraphIndex() == paragraph)
+                .map(s -> (double) textLayoutOf(s).getVisibleAdvance())
+                .toList();
+    }
+
     /**
      * Returns the y-position passed to the first
      * {@code drawGlyphVector} call when laying out {@code markup} with
