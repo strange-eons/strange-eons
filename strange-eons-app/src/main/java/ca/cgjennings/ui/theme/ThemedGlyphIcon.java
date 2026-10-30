@@ -384,7 +384,10 @@ public class ThemedGlyphIcon extends AbstractThemedIcon {
 
         g = (Graphics2D) g.create();
         try {
-            g.addRenderingHints((Map<?, ?>) Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints"));
+            Map<?, ?> hints = (Map<?, ?>) Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints");
+            if (hints != null) {
+                g.addRenderingHints(hints);
+            }
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.translate(x, y);
             g.clipRect(0, 0, width, height);
