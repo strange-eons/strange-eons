@@ -9,6 +9,8 @@ import ca.cgjennings.apps.arkham.dialog.ErrorDialog;
 import ca.cgjennings.graphics.ImageUtilities;
 import ca.cgjennings.i18n.PatternExceptionLocalizer;
 import ca.cgjennings.io.ConnectionSupport;
+import ca.cgjennings.io.EscapedLineReader;
+import ca.cgjennings.io.EscapedLineWriter;
 import ca.cgjennings.io.FileChangeListener;
 import ca.cgjennings.io.FileChangeMonitor;
 import ca.cgjennings.io.FileChangeMonitor.ChangeType;
@@ -54,6 +56,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.MalformedURLException;
+import java.nio.file.Files;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
@@ -133,6 +136,23 @@ public final class ProjectView extends javax.swing.JPanel {
      * Project property that stores the topmost visible row.
      */
     private static final String PROJECT_FIRST_ROW = "first-row";
+    private static final String[] TREE_STATE_KEYS = {
+        PROJECT_SELECTION_LIST, PROJECT_OPEN_FOLDER_LIST, PROJECT_FIRST_ROW
+    };
+    /**
+     * User setting that controls where the tree state is stored. If enabled, it
+     * is stored in project settings. If disabled, it is stored in a separate
+     * file that source control can ignore.
+     */
+    public static final String KEY_STORE_TREE_STATE = "project-store-tree-state";
+    /**
+     * Folder within a project for state that is not part of its source.
+     */
+    static final String LOCAL_STATE_FOLDER = ".StrangeEons";
+    /**
+     * File in the local state folder that stores the tree state.
+     */
+    static final String TREE_STATE_FILE = "seproject-state";
 
     /**
      * Returns the view of the currently open project, or {@code null} if there
@@ -1477,12 +1497,12 @@ public final class ProjectView extends javax.swing.JPanel {
     }
 
     /**
-     * Stores the current tree state (open folders and selections) to the
-     * project's settings.
+     * Stores the current tree state (open folders and selections).
      */
-    private void storeTreeState() {
+    private void storeTreeState() throws IOException {
+        Settings state = new Settings();
         TreePath[] tp = projTree.getSelectionPaths();
-        project.getSettings().set(PROJECT_SELECTION_LIST, treePathsToPropertyValue(tp));
+        state.set(PROJECT_SELECTION_LIST, treePathsToPropertyValue(tp));
 
         int rowCount = projTree.getRowCount();
         LinkedList<TreePath> op = new LinkedList<>();
@@ -1491,28 +1511,125 @@ public final class ProjectView extends javax.swing.JPanel {
                 op.add(projTree.getPathForRow(r));
             }
         }
-        project.getSettings().set(PROJECT_OPEN_FOLDER_LIST, treePathsToPropertyValue(op.toArray(TreePath[]::new)));
+        state.set(PROJECT_OPEN_FOLDER_LIST, treePathsToPropertyValue(op.toArray(TreePath[]::new)));
 
         Point topmostPoint = ((JViewport) projTree.getParent()).getViewPosition();
         int row = projTree.getClosestRowForLocation(0, topmostPoint.y);
-        project.getSettings().setInt(PROJECT_FIRST_ROW, row);
+        state.setInt(PROJECT_FIRST_ROW, row);
+
+        saveTreeState(project.getFile(), project.getSettings(), state, Settings.getUser().getYesNo(KEY_STORE_TREE_STATE));
     }
 
     /**
-     * Restores the tree state (open folders and selections) from the project's
-     * settings.
+     * Saves tree state to either the project settings or the tree state file,
+     * removing it from the other location.
+     *
+     * @param projectFolder the project's folder
+     * @param settings the project settings
+     * @param state the tree state to save
+     * @param inSettings if {@code true}, save to the project settings
+     * @throws IOException if the tree state file cannot be written
+     */
+    static void saveTreeState(File projectFolder, Settings settings, Settings state, boolean inSettings) throws IOException {
+        File stateFolder = new File(projectFolder, LOCAL_STATE_FOLDER);
+        File stateFile = new File(stateFolder, TREE_STATE_FILE);
+        if (inSettings) {
+            for (String key : TREE_STATE_KEYS) {
+                settings.set(key, state.get(key));
+            }
+            if (stateFile.delete()) {
+                // fails, as intended, if the folder has other content
+                stateFolder.delete();
+            }
+            return;
+        }
+        // the project may have been deleted while it was open
+        if (!projectFolder.isDirectory()) {
+            return;
+        }
+        if (!stateFolder.isDirectory()) {
+            if (!stateFolder.mkdir()) {
+                throw new IOException("unable to create folder " + stateFolder);
+            }
+            if (PlatformSupport.PLATFORM_IS_WINDOWS) {
+                setDosHidden(stateFolder);
+            }
+        }
+        try (EscapedLineWriter out = new EscapedLineWriter(stateFile)) {
+            for (String key : TREE_STATE_KEYS) {
+                out.writeProperty(key, state.get(key));
+            }
+        }
+        clearTreeState(settings);
+    }
+
+    /**
+     * Sets the DOS hidden attribute of a folder, which Windows uses in place of
+     * the leading dot convention. Failure only leaves the folder visible, so it
+     * is logged instead of reported.
+     *
+     * @param folder the folder to hide
+     */
+    static void setDosHidden(File folder) {
+        try {
+            Files.setAttribute(folder.toPath(), "dos:hidden", true);
+        } catch (IOException | UnsupportedOperationException | IllegalArgumentException e) {
+            StrangeEons.log.log(Level.WARNING, "unable to hide " + folder, e);
+        }
+    }
+
+    /**
+     * Returns the saved tree state. The tree state file takes precedence over
+     * the project settings, which remain the fallback for projects that do not
+     * have a tree state file.
+     *
+     * @param projectFolder the project's folder
+     * @param settings the project settings
+     * @return settings that contain the saved tree state
+     */
+    static Settings loadTreeState(File projectFolder, Settings settings) {
+        File stateFile = new File(new File(projectFolder, LOCAL_STATE_FOLDER), TREE_STATE_FILE);
+        if (stateFile.isFile()) {
+            try (EscapedLineReader in = new EscapedLineReader(stateFile)) {
+                Settings state = new Settings();
+                String[] pair;
+                while ((pair = in.readProperty(true)) != null) {
+                    state.set(pair[0], pair[1]);
+                }
+                return state;
+            } catch (IOException e) {
+                StrangeEons.log.log(Level.WARNING, "unable to read " + stateFile, e);
+            }
+        }
+        return settings;
+    }
+
+    /**
+     * Removes any stored tree state from project settings.
+     *
+     * @param settings the project settings to update
+     */
+    static void clearTreeState(Settings settings) {
+        for (String key : TREE_STATE_KEYS) {
+            settings.reset(key);
+        }
+    }
+
+    /**
+     * Restores the tree state (open folders and selections).
      */
     private void recoverTreeState() {
-        String s = project.getSettings().get(PROJECT_SELECTION_LIST);
+        Settings state = loadTreeState(project.getFile(), project.getSettings());
+        String s = state.get(PROJECT_SELECTION_LIST);
         TreePath[] tp = propertyValueToTreePaths(s);
         projTree.setSelectionPaths(tp);
 
-        s = project.getSettings().get(PROJECT_OPEN_FOLDER_LIST);
+        s = state.get(PROJECT_OPEN_FOLDER_LIST);
         for (TreePath p : propertyValueToTreePaths(s)) {
             projTree.expandPath(p);
         }
 
-        int row = project.getSettings().getInt(PROJECT_FIRST_ROW, 0);
+        int row = state.getInt(PROJECT_FIRST_ROW, 0);
         Rectangle r = projTree.getRowBounds(row);
         if (r != null) {
             ((JViewport) projTree.getParent()).setViewPosition(new Point(0, r.y));
