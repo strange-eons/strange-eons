@@ -562,6 +562,7 @@ public final class RootEditor extends javax.swing.JDialog implements AgnosticDia
         jScrollPane1 = new javax.swing.JScrollPane();
         scriptList = new javax.swing.JList<>();
         jLabel1 = new javax.swing.JLabel();
+        touchLocationGroup = new javax.swing.ButtonGroup();
         javax.swing.JPanel catalogIDPanel = new javax.swing.JPanel();
         jLabel3 = new javax.swing.JLabel();
         uuidField = new javax.swing.JTextField();
@@ -572,6 +573,8 @@ public final class RootEditor extends javax.swing.JDialog implements AgnosticDia
         catIDhelp = new ca.cgjennings.ui.JHelpButton();
         copyIDBtn = new javax.swing.JButton();
         autotouchCheck = new javax.swing.JCheckBox();
+        touchProjectRadio = new javax.swing.JRadioButton();
+        touchBundleRadio = new javax.swing.JRadioButton();
         catalogDescPanel = new javax.swing.JPanel();
         javax.swing.JLabel jLabel2 = new javax.swing.JLabel();
         catNameField = new javax.swing.JTextField();
@@ -718,6 +721,26 @@ public final class RootEditor extends javax.swing.JDialog implements AgnosticDia
             }
         });
 
+        touchLocationGroup.add(touchProjectRadio);
+        touchProjectRadio.setSelected( Settings.getUser().getYesNo( MakeBundle.KEY_WRITE_TOUCHED_ROOT ) );
+        touchProjectRadio.setText(string("prj-re-id-touch-project")); // NOI18N
+        touchProjectRadio.setEnabled( autotouchCheck.isSelected() );
+        touchProjectRadio.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                touchLocationActionPerformed(evt);
+            }
+        });
+
+        touchLocationGroup.add(touchBundleRadio);
+        touchBundleRadio.setSelected( !Settings.getUser().getYesNo( MakeBundle.KEY_WRITE_TOUCHED_ROOT ) );
+        touchBundleRadio.setText(string("prj-re-id-touch-bundle")); // NOI18N
+        touchBundleRadio.setEnabled( autotouchCheck.isSelected() );
+        touchBundleRadio.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                touchLocationActionPerformed(evt);
+            }
+        });
+
         javax.swing.GroupLayout catalogIDPanelLayout = new javax.swing.GroupLayout(catalogIDPanel);
         catalogIDPanel.setLayout(catalogIDPanelLayout);
         catalogIDPanelLayout.setHorizontalGroup(
@@ -730,6 +753,11 @@ public final class RootEditor extends javax.swing.JDialog implements AgnosticDia
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addGroup(catalogIDPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addComponent(autotouchCheck)
+                    .addGroup(catalogIDPanelLayout.createSequentialGroup()
+                        .addGap(21, 21, 21)
+                        .addGroup(catalogIDPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(touchProjectRadio)
+                            .addComponent(touchBundleRadio)))
                     .addGroup(catalogIDPanelLayout.createSequentialGroup()
                         .addGroup(catalogIDPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
                             .addComponent(idVersionField)
@@ -764,6 +792,10 @@ public final class RootEditor extends javax.swing.JDialog implements AgnosticDia
                     .addComponent(catIDhelp, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(autotouchCheck)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(touchProjectRadio)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(touchBundleRadio)
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
 
@@ -1502,7 +1534,13 @@ public final class RootEditor extends javax.swing.JDialog implements AgnosticDia
 
     private void autotouchCheckActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_autotouchCheckActionPerformed
         Settings.getUser().setBoolean("make-bundle-autotouch", autotouchCheck.isSelected());
+        touchProjectRadio.setEnabled(autotouchCheck.isSelected());
+        touchBundleRadio.setEnabled(autotouchCheck.isSelected());
     }//GEN-LAST:event_autotouchCheckActionPerformed
+
+    private void touchLocationActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_touchLocationActionPerformed
+        Settings.getUser().setYesNo(MakeBundle.KEY_WRITE_TOUCHED_ROOT, touchProjectRadio.isSelected());
+    }//GEN-LAST:event_touchLocationActionPerformed
 
     private void gameLangFieldFocusLost(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_gameLangFieldFocusLost
         languageFieldChanged(gameLangField, PluginRoot.CLIENT_KEY_GAME_LANGUAGES);
@@ -1546,6 +1584,9 @@ public final class RootEditor extends javax.swing.JDialog implements AgnosticDia
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JPanel advanced;
     private javax.swing.JCheckBox autotouchCheck;
+    private javax.swing.JRadioButton touchBundleRadio;
+    private javax.swing.ButtonGroup touchLocationGroup;
+    private javax.swing.JRadioButton touchProjectRadio;
     private javax.swing.JComboBox<String> buildCombo;
     private javax.swing.JButton cancelBtn;
     private javax.swing.JPanel cardPanel;

@@ -137,19 +137,16 @@ public class MakeBundle extends TaskAction {
         // and touch the catalogue ID (if enabled).
         File rootFile = new File(task.getFile(), "eons-plugin");
         PluginRoot root = null;
+        PluginRoot packedRoot = null;
         if (rootFile.exists()) {
             boolean writeRootUpdate = false;
             try {
                 root = new PluginRoot(rootFile);
                 if (Settings.getUser().getYesNo(KEY_AUTOTOUCH)) {
-                    CatalogID id = root.getCatalogID();
-                    if (id == null) {
-                        id = new CatalogID(); // generate
-                    } else {
-                        id = new CatalogID(id); //touch
+                    writeRootUpdate = touchRoot(root, Settings.getUser().getYesNo(KEY_WRITE_TOUCHED_ROOT));
+                    if (!writeRootUpdate) {
+                        packedRoot = root;
                     }
-                    root.setCatalogID(id);
-                    writeRootUpdate = true;
                 }
             } catch (IOException e) {
                 StrangeEons.log.log(Level.WARNING, "unable to read root file", e);
@@ -195,10 +192,11 @@ public class MakeBundle extends TaskAction {
 
             // zip is valid now; put in final var so we can share with inner class
             final ZipOutputStream out = zip;
+            final PluginRoot rootOverride = packedRoot;
             packFailure = null;
             new BusyDialog(StrangeEons.getWindow(), string("pa-make-bundle-busy"), () -> {
                 try {
-                    pack(out, task, "");
+                    pack(out, task, "", rootOverride);
                 } catch (IOException e) {
                     packFailure = e;
                 }
@@ -237,12 +235,44 @@ public class MakeBundle extends TaskAction {
     }
     private IOException packFailure;
 
-    private void pack(ZipOutputStream zip, Member parent, String base) throws IOException {
+    /**
+     * Touches the catalog ID of a root file, generating an ID if it has none.
+     * A generated ID must always be saved, or else the bundle would be given a
+     * different UUID each time it is made.
+     *
+     * @param root the root to update
+     * @param writeTouched whether a touched ID should be saved to the root file
+     * @return {@code true} if the root must be written to the root file
+     */
+    static boolean touchRoot(PluginRoot root, boolean writeTouched) {
+        CatalogID id = root.getCatalogID();
+        if (id == null) {
+            root.setCatalogID(new CatalogID()); // generate
+            return true;
+        }
+        root.setCatalogID(new CatalogID(id)); //touch
+        return writeTouched;
+    }
+
+    /**
+     * Adds the children of a member to a bundle archive.
+     *
+     * @param zip the archive to write to
+     * @param parent the member whose children are added
+     * @param base the entry name prefix for the children
+     * @param rootOverride if non-null, written in place of the root file
+     * @throws IOException if an I/O error occurs
+     */
+    static void pack(ZipOutputStream zip, Member parent, String base, PluginRoot rootOverride) throws IOException {
         for (Member kid : parent.getChildren()) {
             File f = kid.getFile();
+            if (rootOverride != null && base.isEmpty() && f.getName().equals(PluginRoot.ROOT_FILE)) {
+                rootOverride.writeToBundleArchive(zip);
+                continue;
+            }
             ProjectUtilities.copyToArchive(zip, f, base, false, true, true);
             if (kid.isFolder()) {
-                pack(zip, kid, base + f.getName() + "/");
+                pack(zip, kid, base + f.getName() + "/", rootOverride);
             }
         }
     }
@@ -257,6 +287,12 @@ public class MakeBundle extends TaskAction {
      * automatically during the make.
      */
     public static final String KEY_AUTOTOUCH = "make-bundle-autotouch";
+
+    /**
+     * User setting that controls whether an automatically touched ID is saved
+     * to the root file. If disabled, only the copy in the bundle is touched.
+     */
+    public static final String KEY_WRITE_TOUCHED_ROOT = "make-bundle-write-touched-root";
 
     private static String guessPluginType(Task task, PluginRoot root) {
         String type = BundleInstaller.PLUGIN_FILE_EXT;

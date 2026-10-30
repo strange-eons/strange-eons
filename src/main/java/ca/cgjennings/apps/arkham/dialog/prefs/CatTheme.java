@@ -3,6 +3,7 @@ package ca.cgjennings.apps.arkham.dialog.prefs;
 import ca.cgjennings.apps.arkham.StrangeEons;
 import ca.cgjennings.apps.arkham.plugins.BundleInstaller;
 import ca.cgjennings.apps.arkham.plugins.InstalledTheme;
+import ca.cgjennings.apps.arkham.project.ProjectView;
 import ca.cgjennings.ui.anim.AnimationUtilities;
 import ca.cgjennings.ui.theme.ThemeInstaller;
 import ca.cgjennings.ui.theme.ThemedSingleImageIcon;
@@ -54,6 +55,7 @@ class CatTheme extends javax.swing.JPanel implements PreferenceCategory {
         openZipCheck = new javax.swing.JCheckBox();
         javax.swing.JLabel miscSect = new javax.swing.JLabel();
         singleInstanceCheck = new javax.swing.JCheckBox();
+        storeTreeStateCheck = new javax.swing.JCheckBox();
         javax.swing.JLabel recentFileLabel = new javax.swing.JLabel();
         recentFileField = new javax.swing.JSpinner();
         useDarkCheck = new javax.swing.JCheckBox();
@@ -111,6 +113,11 @@ class CatTheme extends javax.swing.JPanel implements PreferenceCategory {
         singleInstanceCheck.setText(string("sd-b-misc-single-instance")); // NOI18N
         singleInstanceCheck.setVerticalAlignment(javax.swing.SwingConstants.TOP);
         singleInstanceCheck.setVerticalTextPosition(javax.swing.SwingConstants.TOP);
+
+        storeTreeStateCheck.setForeground(new java.awt.Color(0, 4, 0));
+        storeTreeStateCheck.setText(string("sd-b-store-tree-state")); // NOI18N
+        storeTreeStateCheck.setVerticalAlignment(javax.swing.SwingConstants.TOP);
+        storeTreeStateCheck.setVerticalTextPosition(javax.swing.SwingConstants.TOP);
 
         recentFileLabel.setForeground(new java.awt.Color(0, 4, 0));
         recentFileLabel.setText(string("sd-l-recent-files")); // NOI18N
@@ -194,6 +201,7 @@ class CatTheme extends javax.swing.JPanel implements PreferenceCategory {
                         .addGap(10, 10, 10)
                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                             .addComponent(singleInstanceCheck, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(storeTreeStateCheck, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                             .addComponent(openZipCheck, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                             .addComponent(recentFileLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                             .addGroup(layout.createSequentialGroup()
@@ -260,6 +268,8 @@ class CatTheme extends javax.swing.JPanel implements PreferenceCategory {
                 .addComponent(openZipCheck, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(singleInstanceCheck, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(storeTreeStateCheck, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(recentFileLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -343,6 +353,7 @@ class CatTheme extends javax.swing.JPanel implements PreferenceCategory {
     private javax.swing.JCheckBox openZipCheck;
     private javax.swing.JSpinner recentFileField;
     private javax.swing.JCheckBox singleInstanceCheck;
+    javax.swing.JCheckBox storeTreeStateCheck;
     private javax.swing.JLabel themeLabel1;
     private javax.swing.JCheckBox useDarkCheck;
     // End of variables declaration//GEN-END:variables
@@ -450,6 +461,7 @@ class CatTheme extends javax.swing.JPanel implements PreferenceCategory {
             user.set("limit-to-single-instance", "yes");
         }
         loadCheck("limit-to-single-instance", singleInstanceCheck);
+        loadCheck(ProjectView.KEY_STORE_TREE_STATE, storeTreeStateCheck);
 
         recentFileField.setValue(
                 Math.max(0, Math.min(25, user.getInt("recent-file-menu-length")))
@@ -489,6 +501,7 @@ class CatTheme extends javax.swing.JPanel implements PreferenceCategory {
 
         saveCheck("open-zip-after-export", openZipCheck);
         saveCheck("limit-to-single-instance", singleInstanceCheck);
+        saveCheck(ProjectView.KEY_STORE_TREE_STATE, storeTreeStateCheck);
         user.set("recent-file-menu-length", String.valueOf(((Number) recentFileField.getValue()).intValue()));
     }
 }

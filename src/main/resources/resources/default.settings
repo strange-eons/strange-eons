@@ -449,6 +449,14 @@ use-project-folder-selector = yes
 # If true, Make Bundle will automatically touch catalogue ID timestamps
 make-bundle-autotouch = yes
 
+# If true, touched catalog IDs are saved to the eons-plugin file; if false,
+# only the copy in the bundle is touched
+make-bundle-write-touched-root = yes
+
+# If true, open folders, selection, and scroll position are stored in seproject;
+# if false, they are stored in .StrangeEons/seproject-state
+project-store-tree-state = yes
+
 # Default settings for bundle testing
 test-bundle-log = ALL
 test-bundle-no-plugins = yes
