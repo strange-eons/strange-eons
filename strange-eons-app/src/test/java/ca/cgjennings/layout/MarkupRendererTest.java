@@ -2159,6 +2159,38 @@ class MarkupRendererTest {
         assertTrue(MarkupRenderer.parseMeasurement("Infinity") < 0d);
     }
 
+    @Test
+    void unusableTabWidthsMakeTabsZeroWidthSpaces() {
+        double[][] unusable = {{0d}, {-1d}, {Double.NaN}, {1e-12d}, {0d, 0d}, {-1d, -1d}, {1d, -1d}};
+        for (double[] widths : unusable) {
+            MarkupRenderer r = new MarkupRenderer();
+            r.setTabWidths(widths);
+            List<LayoutSegment> segments = segmentsOf(r, "a\tb");
+            assertEquals(2, segments.size(), () -> java.util.Arrays.toString(widths));
+            assertEquals(textLayoutOf(segments.get(0)).getAdvance(),
+                    segments.get(1).getXOffset(), 0.01f);
+        }
+    }
+
+    @Test
+    void invalidTabwidthTagDoesNotBreakLayout() {
+        assertEquals(2, tabXs("<tabwidth garbage>a\tb").size());
+        assertEquals(1, tabXs("<tabwidth garbage garbage>a").size());
+    }
+
+    @Test
+    void onePointIsSmallestUsableTabCycle() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTabWidth(1d / 72d);
+        float x = xOffsets(segmentsOf(r, "a\tb")).get(1);
+        assertEquals(Math.rint(x), x, 0.01f);
+    }
+
+    @Test
+    void zeroWidthInUsableCycleRepeatsPreviousStop() {
+        assertEquals(List.of(0f, 72f, 144f), tabXs("<tabwidth 1in 0>a\tb\tc"));
+    }
+
     private static List<Float> tabXs(String markup) {
         return xOffsets(layoutOf(markup, 300, 200));
     }

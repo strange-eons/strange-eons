@@ -985,7 +985,20 @@ public class MarkupRenderer {
         );
     }
 
+    /**
+     * Returns the tab stop positions for a line, or {@code null} if the tab
+     * widths do not span at least one point, in which case tabs count as
+     * 0-width spaces.
+     */
     private double[] createTabStopArray(double x, double width) {
+        double cycle = 0d;
+        for (double tabWidth : tabWidths) {
+            cycle += tabWidth * dpi;
+        }
+        if (!(cycle >= dpi / 72d)) {
+            return null;
+        }
+
         double[] tabStops;
         if (tabWidths.length == 1) {
             double tabSize = tabWidths[0] * dpi;
@@ -1173,8 +1186,9 @@ public class MarkupRenderer {
                         // update the index into tabLocations to point to the next tab
                         tabCurrent++;
                         // skip xPosition to the next tab stop---if rendering as a
-                        // single line, tabStops==null and tabs count as 0-width spaces
-                        if (!restrictToSingleLine) {
+                        // single line or the tab widths are unusable,
+                        // tabStops==null and tabs count as 0-width spaces
+                        if (tabStops != null) {
                             int t;
                             final int stopIndex = tabStops.length - 1;
                             for (t = 0; t < stopIndex && xPosition > tabStops[t]; ++t);
