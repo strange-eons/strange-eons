@@ -5,7 +5,7 @@ components for paper-based games. It started out as a research tool
 for investigating human creativity, but has since grown into a
 comprehensive toolset for game enthusiasts and creators.
 
-[![CI](https://github.com/christophercurrie/strange-eons/actions/workflows/ci.yaml/badge.svg)](https://github.com/christophercurrie/strange-eons/actions/workflows/ci.yaml)
+[![CI](https://github.com/strange-eons/strange-eons/actions/workflows/ci.yaml/badge.svg)](https://github.com/christophercurrie/strange-eons/actions/workflows/ci.yaml)
 
 ## Features
 
@@ -131,25 +131,27 @@ or otherwise contributing code or data, you agree that your
 contribution can be combined with, and made available under the
 same [license terms](LICENSE.txt) as, the rest of the project.
 
-The user documentation is also open to contributions.
-It can be found in the separate
-[se3docs repository](https://github.com/CGJennings/se3docs).
+> Note: the user documentation has been imported but hasn't been updated
+> by the current maintainer. It can be found in the separate
+> [se3docs repository](https://github.com/strange-eons/se3docs).
 
-*There be dragons...*
-I don't want to deter anyone from contributing, but I do want to
-give fair warning on a few points before you dive in:
-
-Strange Eons began many years ago as a simple editor for a single
-type of game card, with some features meant to help users find more
-creative designs. These early versions were developed to support
-research connected to my doctoral dissertation, and contain some of
-the first Java code I ever wrote. Although it has grown beyond its
-humble beginnings, as you might expect it contains some... sharp
-corners and unfortunate choices.
+From the original maintainer, [@CGJennings](https://www.github.com/CGJennings)
+> *There be dragons...*
+> I don't want to deter anyone from contributing, but I do want to
+> give fair warning on a few points before you dive in:
+> 
+> Strange Eons began many years ago as a simple editor for a single
+> type of game card, with some features meant to help users find more
+> creative designs. These early versions were developed to support
+> research connected to my doctoral dissertation, and contain some of
+> the first Java code I ever wrote. Although it has grown beyond its
+> humble beginnings, as you might expect it contains some... sharp
+> corners and unfortunate choices.
 
 ### Organization
 
-Source code is found under
+The code is organized in a multi-module Gradle build. The core application
+lives under `strange-eons-app`. Source code is found under
 [`src/main/java`](https://github.com/CGJennings/strange-eons/tree/main/src/main/java)
 and
 [`src/main/resources`](https://github.com/CGJennings/strange-eons/tree/main/src/main/resources),
@@ -173,10 +175,11 @@ loading and managing those resources, such as `ResourceKit`,
 
 ## Change log/version history
 
-See the release notes in the
-[user manual](https://se3docs.cgjennings.ca/um-release-notes.html)
-for a detailed history.
+Changes from the current maintainer (since version 3.5.0) are in the
+CHANGELOG.md file.
 
 ## License information
 
-Original source code in this repository is licensed under an [MIT license](LICENSE.txt). Third party components are licensed under the terms in the relevant source files and/or their description in the About dialog box.
+Original source code in this repository is licensed under an
+[MIT license](LICENSE.txt). Third party components are licensed under the terms in the
+relevant source files and/or their description in the About dialog box.
