@@ -29,13 +29,9 @@ import static org.mockito.Mockito.verify;
  */
 class MarkupRendererBugsTest {
 
-    // ---- Markup that hangs or crashes rendering ---------------------
+    // ---- Markup must not hang or crash rendering --------------------
 
     @Test
-    @Disabled("BUG: a zero tab width makes createTabStopArray return an empty "
-            + "array, so renderText throws ArrayIndexOutOfBoundsException at the "
-            + "first tab. Invalid <tabwidth> parameters are converted to zero, "
-            + "so <tabwidth garbage> reaches this from markup.")
     void zeroTabWidthShouldNotThrowAtTab() {
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("<tabwidth garbage>a\tb");
@@ -45,10 +41,6 @@ class MarkupRendererBugsTest {
     }
 
     @Test
-    @Disabled("BUG: when multiple tab widths are all zero, the sizing loop in "
-            + "createTabStopArray never advances, so layout hangs forever, even "
-            + "without a tab in the text. <tabwidth garbage garbage> reaches "
-            + "this from markup.")
     void allZeroTabWidthsShouldNotHangLayout() throws InterruptedException {
         assertLayoutFinishes("<tabwidth garbage garbage>a");
     }
