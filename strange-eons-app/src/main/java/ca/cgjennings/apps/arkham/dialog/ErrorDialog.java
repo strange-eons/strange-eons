@@ -182,6 +182,10 @@ public final class ErrorDialog extends javax.swing.JDialog {
     public static void displayFatalError(final String message, final Throwable cause) {
         StrangeEons.log.log(Level.SEVERE, message, cause);
 
+        if (java.awt.GraphicsEnvironment.isHeadless()) {
+            System.exit(1);
+        }
+
         // create a stack trace
         try {
             StringBuilder b = new StringBuilder();

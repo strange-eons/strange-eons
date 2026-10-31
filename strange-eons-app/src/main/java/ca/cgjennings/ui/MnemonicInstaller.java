@@ -5,6 +5,7 @@ import ca.cgjennings.apps.arkham.commands.Commands;
 import ca.cgjennings.platform.PlatformSupport;
 import ca.cgjennings.spelling.ui.MenuBuilder;
 import ca.cgjennings.spelling.ui.PopupMenuFactory;
+import java.awt.GraphicsEnvironment;
 import java.awt.AWTEvent;
 import java.awt.Color;
 import java.awt.Component;
@@ -163,7 +164,7 @@ public class MnemonicInstaller {
                 // fixes for text components to enable drag & drop
                 if (comp instanceof JTextComponent) {
                     JTextComponent tc = (JTextComponent) comp;
-                    if (!tc.getDragEnabled() && tc.getTransferHandler() != null) {
+                    if (!GraphicsEnvironment.isHeadless() && !tc.getDragEnabled() && tc.getTransferHandler() != null) {
                         tc.setDropMode(DropMode.INSERT);
                         tc.setDragEnabled(true);
                     }

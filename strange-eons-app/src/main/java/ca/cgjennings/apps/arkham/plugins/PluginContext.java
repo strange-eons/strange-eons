@@ -1,6 +1,6 @@
 package ca.cgjennings.apps.arkham.plugins;
 
-import java.awt.Toolkit;
+import ca.cgjennings.platform.PlatformSupport;
 import java.awt.event.InputEvent;
 import java.util.Locale;
 import resources.Language;
@@ -144,7 +144,7 @@ public interface PluginContext {
      * key on this platform was held down. (For example, it maps to Ctrl on
      * Windows and Command on Mac.)
      */
-    public static final int MENU = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+    public static final int MENU = PlatformSupport.getMenuShortcutMask();
 
     // Backwards compatibility
     @Deprecated

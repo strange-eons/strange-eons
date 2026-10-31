@@ -64,6 +64,10 @@ public class CommandLineArguments implements Cloneable {
 
     /**
      * Script file to run in script mode; see {@link ScriptRunnerModeHelper}.
+     * This is the only mode available when the JVM is headless
+     * ({@code -Djava.awt.headless=true}). A headless run has no application
+     * window or script console, starts libraries and extensions but not other
+     * plug-ins, and exits with status 0 if the script succeeds and 1 otherwise.
      */
     public File run = null;
 

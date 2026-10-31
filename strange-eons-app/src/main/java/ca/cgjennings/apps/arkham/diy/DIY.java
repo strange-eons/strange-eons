@@ -348,7 +348,7 @@ public class DIY extends AbstractGameComponent implements Handler {
                 try {
                     handler = monkey.implement(Handler.class);
                 } catch (IllegalArgumentException e) {
-                    ScriptMonkey.getSharedConsole().getErrorWriter().println(
+                    ScriptMonkey.getConsoleErrorWriter().println(
                             "DIY script does not implement Handler functions: " + script
                     );
                 }
@@ -359,7 +359,7 @@ public class DIY extends AbstractGameComponent implements Handler {
             }
             throw new FileNotFoundException(string("plug-err-diy-missing-2", script));
         } catch (IOException e) {
-            e.printStackTrace(ScriptMonkey.getSharedConsole().getErrorWriter());
+            e.printStackTrace(ScriptMonkey.getConsoleErrorWriter());
         }
 
         if (handler == null) {

@@ -1,6 +1,6 @@
 package ca.cgjennings.apps.arkham.plugins.engine;
 
-import ca.cgjennings.apps.arkham.plugins.ScriptConsole.ConsolePrintWriter;
+import java.io.PrintWriter;
 import ca.cgjennings.apps.arkham.plugins.ScriptMonkey;
 import java.util.ResourceBundle;
 import org.mozilla.javascript.ErrorReporter;
@@ -41,7 +41,7 @@ public final class WarningErrorReporter implements ErrorReporter {
         }
         // this output follows the same format as an exception
         // so that double-clicking the console will display the file
-        final ConsolePrintWriter w = ScriptMonkey.getSharedConsole().getWarningWriter();
+        final PrintWriter w = ScriptMonkey.getConsoleWarningWriter();
         if (sourceName != null) {
             w.printf(
                     "WARNING: %s\n\tat %s:%d\n", message, sourceName, line

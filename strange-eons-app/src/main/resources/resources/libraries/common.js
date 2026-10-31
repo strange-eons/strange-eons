@@ -164,16 +164,18 @@ const printf = function printf() {
 
 const Console = {
     get out() {
-        return arkham.plugins.ScriptMonkey.sharedConsole.getWriter();
+        return arkham.plugins.ScriptMonkey.getConsoleWriter();
     },
     get err() {
-        return arkham.plugins.ScriptMonkey.sharedConsole.getErrorWriter();
+        return arkham.plugins.ScriptMonkey.getConsoleErrorWriter();
     },
     get visible() {
-        return arkham.plugins.ScriptMonkey.sharedConsole.isVisible();
+        const console = arkham.plugins.ScriptMonkey.sharedConsole;
+        return console != null && console.isVisible();
     },
     set visible(b) {
-        arkham.plugins.ScriptMonkey.sharedConsole.setVisible(b);
+        const console = arkham.plugins.ScriptMonkey.sharedConsole;
+        if (console != null) console.setVisible(b);
     },
     print: print,
     println: println,
@@ -187,22 +189,27 @@ const Console = {
         this.out.insertHTML(html);
     },
     clear() {
-        arkham.plugins.ScriptMonkey.sharedConsole.clear();
+        const console = arkham.plugins.ScriptMonkey.sharedConsole;
+        if (console != null) console.clear();
     },
     scrollToTop() {
-        arkham.plugins.ScriptMonkey.sharedConsole.scrollToTop();
+        const console = arkham.plugins.ScriptMonkey.sharedConsole;
+        if (console != null) console.scrollToTop();
     },
     scrollToBottom() {
-        arkham.plugins.ScriptMonkey.sharedConsole.scrollToBottom();
+        const console = arkham.plugins.ScriptMonkey.sharedConsole;
+        if (console != null) console.scrollToBottom();
     },
     history() {
-        return arkham.plugins.ScriptMonkey.sharedConsole.getHistoryText();
+        const console = arkham.plugins.ScriptMonkey.sharedConsole;
+        return console == null ? "" : console.getHistoryText();
     },
     queue() {
-        arkham.plugins.ScriptMonkey.sharedConsole.queue();
+        const console = arkham.plugins.ScriptMonkey.sharedConsole;
+        if (console != null) console.queue();
     },
     flush() {
-        arkham.plugins.ScriptMonkey.sharedConsole.flush();
+        arkham.plugins.ScriptMonkey.flushConsole();
     }
 };
 

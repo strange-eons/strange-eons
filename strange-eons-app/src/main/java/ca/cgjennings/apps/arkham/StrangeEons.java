@@ -471,6 +471,11 @@ public final class StrangeEons {
                 System.exit(0);
             }
 
+            if (GraphicsEnvironment.isHeadless() && commandLineArguments.run == null) {
+                System.err.println("no display available: a headless run requires --run");
+                System.exit(11);
+            }
+
             if (commandLineArguments.xDisablePluginLoading) {
                 BundleInstaller.disablePluginLoading();
                 log.info("disabled plug-in loading");
@@ -1776,6 +1781,16 @@ public final class StrangeEons {
     }
     private SplashWindow splash;
 
+    private void setStartupPercent(int percent) {
+        SplashWindow lSplash;
+        synchronized (SplashWindow.class) {
+            lSplash = splash;
+        }
+        if (lSplash != null) {
+            lSplash.setPercent(percent);
+        }
+    }
+
     /**
      * Returns a window that can be used as a parent window for dialog boxes.
      * During startup, this method will return the splash window. Once the
@@ -1882,8 +1897,11 @@ public final class StrangeEons {
 
         if (commandLineArguments.plugintest == null) {
             // If in single instance mode and another instance exists, this
-            // method will not return.
-            initApplySingleInstanceLimit();
+            // method will not return. A headless run must not hand its work
+            // to an interactive instance.
+            if (!GraphicsEnvironment.isHeadless()) {
+                initApplySingleInstanceLimit();
+            }
         } else {
             // Never limit to single instance when a plug-in test is done,
             // since there is (typically) a parent instance starting us.
@@ -1928,8 +1946,8 @@ public final class StrangeEons {
         initSplashWindow();
 
         // Init UI and game language
-        splash.setActivity(string("init-starting"));
-        splash.setPercent(0);
+        setStartupActivityMessage(string("init-starting"));
+        setStartupPercent(0);
         initLanguage();
 
         // check Java version and display localized message if not new enough
@@ -1940,21 +1958,21 @@ public final class StrangeEons {
         // it may display an error dialog
         RawSettings.loadGlobalSettings("default.settings");
 
-        splash.setPercent(3);
+        setStartupPercent(3);
         initUserStorageFolders();
         initNetworkProtocols();
         initImageIO();
-        splash.setPercent(5);
+        setStartupPercent(5);
 
         initBundleUpdater();
-        splash.setPercent(10);
+        setStartupPercent(10);
 
         // Install libs before spelling componenents since the spelling engine
         // wants the dictionary library if it exists, and also before the EDT init
         // since libs are guaranteed to be installed before themes.
-        splash.setActivity(string("init-libs"));
+        setStartupActivityMessage(string("init-libs"));
         BundleInstaller.loadLibraryBundles();
-        splash.setPercent(15);
+        setStartupPercent(15);
 
         // Both Stage 1 AND the initial boot thread will end at this point:
         // Stage 2 will be executed from the EDT, although it may also start
@@ -1981,11 +1999,12 @@ public final class StrangeEons {
      */
     private void initStage2(final long startTime) throws Throwable {
         JUtilities.threadAssert();
+        final boolean headless = GraphicsEnvironment.isHeadless();
         // Start spelling engine, but don't load the dictionary
         // (that will happen momentarily, in parallel, to speed startup).
-        splash.setActivity(string("init-spelling"));
+        setStartupActivityMessage(string("init-spelling"));
         initSpellingChecker();
-        splash.setPercent(20);
+        setStartupPercent(20);
 
         // Starts some initialization steps that doesn't need the GUI or EDT
         // in a background thread.
@@ -2004,22 +2023,26 @@ public final class StrangeEons {
         // For example, it must exist before starting extensions since
         // they might write to the console window, and the main app window
         // is the parent of the console window.
-        new AppFrame();
-        splash.setPercent(30);
+        if (!headless) {
+            new AppFrame();
+        }
+        setStartupPercent(30);
 
         // Due to some bugs in Java, it can take a long time to create
         // the first file chooser in the system. It is better have such
         // a delay now while the app starts then when we want to display one.
-        ResourceKit.initializeFileDialogs();
-        splash.setPercent(40);
-        splash.setActivity(string("init-plugins"));
+        if (!headless) {
+            ResourceKit.initializeFileDialogs();
+        }
+        setStartupPercent(40);
+        setStartupActivityMessage(string("init-plugins"));
         initMarkupTargetTracking();
 
         // If script debugging is enabled, start the debug server before
         // any script code runs (when plug-ins are installed, below). This
         // also has to be run after the app window exists so that it can
         // attach its bug icon.
-        if (Settings.getShared().getYesNo("enable-script-debugger") || BundleInstaller.hasTestBundles()) {
+        if (!headless && (Settings.getShared().getYesNo("enable-script-debugger") || BundleInstaller.hasTestBundles())) {
             ScriptDebugging.install();
         }
 
@@ -2029,25 +2052,28 @@ public final class StrangeEons {
         // we want to make sure it is done before extensions are loaded in case
         // they rely on anything it sets up.
         waitForBackgroundInit();
-        splash.setPercent(50);
+        setStartupPercent(50);
 
         BundleInstaller.loadExtensionBundles((Object source, float progress) -> {
-            if (splash != null) {
-                splash.setActivity(source.toString());
-                splash.setPercent(50 + (int) (25f * progress));
-            }
+            setStartupActivityMessage(source.toString());
+            setStartupPercent(50 + (int) (25f * progress));
             return true;
         });
-        splash.setPercent(75);
+        setStartupPercent(75);
 
         // Lock the game database now, before loading regular plug-ins
         Lock.setLocked(true);
 
-        splash.setPercent(85);
+        setStartupPercent(85);
         BundleInstaller.loadPluginBundles();
 
-        splash.setActivity("Iä! Iä! Cthulhu F'thagn!");
-        splash.setPercent(95);
+        setStartupActivityMessage("Iä! Iä! Cthulhu F'thagn!");
+        setStartupPercent(95);
+
+        if (headless) {
+            runHeadlessScript();
+            return;
+        }
 
         // Finally!
         // The app window was created earlier, so
@@ -2082,6 +2108,27 @@ public final class StrangeEons {
                 log.logp(Level.SEVERE, getClass().getName(), "initStage2", "exception while closing splash window", e);
             }
         });
+    }
+
+    /**
+     * Runs the script runner mode script in place of displaying the application,
+     * then exits.
+     */
+    private void runHeadlessScript() {
+        boolean succeeded = false;
+        try {
+            succeeded = ((ScriptRunnerModeHelper) scriptRunnerMode).execute();
+            BundleInstaller.unloadExtensions();
+            runExitTasks();
+            RawSettings.writeUserSettingsImmediately();
+        } catch (Throwable t) {
+            succeeded = false;
+            log.log(Level.SEVERE, "uncaught exception during headless run", t);
+        } finally {
+            final int status = succeeded ? 0 : 1;
+            // synch with any exit tasks that need to invokeLater
+            EventQueue.invokeLater(() -> System.exit(status));
+        }
     }
 
     private static int checkForLingeringStartupWindows(Window startupParent, boolean moveToFront) {
@@ -2134,6 +2181,9 @@ public final class StrangeEons {
      * @throws Throwable any exception that occurs while creating the window
      */
     private void initSplashWindow() throws Throwable {
+        if (GraphicsEnvironment.isHeadless()) {
+            return;
+        }
         synchronized (this) {
             GraphicsConfiguration gc = null;
             String displayID = RawSettings.getUserSetting("appframe-device");
@@ -2554,7 +2604,7 @@ public final class StrangeEons {
         try {
             ClassMap.add("editors/minimal.classmap");
             ConversionMap.add("editors/minimal.conversionmap");
-            splash.setPercent(45);
+            setStartupPercent(45);
             Silhouette.add("silhouettes/standard.silhouettes");
         } catch (IOException | RuntimeException ex) {
             log.log(Level.SEVERE, "failed to create built-in editor data", ex);

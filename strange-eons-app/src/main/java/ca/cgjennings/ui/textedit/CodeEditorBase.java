@@ -3,12 +3,12 @@ package ca.cgjennings.ui.textedit;
 import ca.cgjennings.apps.arkham.StrangeEons;
 import ca.cgjennings.apps.arkham.editors.AbbreviationTableManager;
 import ca.cgjennings.ui.theme.ThemedIcon;
+import ca.cgjennings.platform.PlatformSupport;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Rectangle;
-import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusEvent;
@@ -1381,7 +1381,7 @@ public class CodeEditorBase extends JPanel {
                         modifiers |= InputEvent.ALT_GRAPH_DOWN_MASK;
                         break;
                     case 'P':
-                        modifiers |= Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+                        modifiers |= PlatformSupport.getMenuShortcutMask();
                         break;
                     case ' ':
                     case '+':

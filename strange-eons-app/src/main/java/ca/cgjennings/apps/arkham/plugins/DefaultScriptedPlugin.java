@@ -143,8 +143,6 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
      */
     @Override
     public boolean initializePlugin(PluginContext context) {
-        ScriptConsole con = ScriptMonkey.getSharedConsole();
-
         monkey = new ScriptMonkey(scriptFile);
         monkey.bind(context);
         lastBoundContext = context;
@@ -161,7 +159,7 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
                         return false;
                     }
                 } catch (ClassCastException e) {
-                    con.getErrorWriter().println("initialize() returned a non-boolean value: " + retval);
+                    ScriptMonkey.getConsoleErrorWriter().println("initialize() returned a non-boolean value: " + retval);
                 }
             }
 
@@ -170,7 +168,7 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
                 try {
                     version = ((Number) retval).floatValue();
                 } catch (ClassCastException e) {
-                    con.getErrorWriter().println("getVersion() returned a non-numeric value: " + retval);
+                    ScriptMonkey.getConsoleErrorWriter().println("getVersion() returned a non-numeric value: " + retval);
                 }
             }
 
@@ -189,16 +187,16 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
                 try {
                     type = ((Number) retval).intValue();
                     if (type < Plugin.ACTIVATED || type > Plugin.EXTENSION) {
-                        con.getErrorWriter().println("getPluginType() returned an unknown plug-in type: " + retval);
+                        ScriptMonkey.getConsoleErrorWriter().println("getPluginType() returned an unknown plug-in type: " + retval);
                         return false;
                     }
                 } catch (ClassCastException e) {
-                    con.getErrorWriter().println("getPluginType() returned an invalid value: " + retval);
+                    ScriptMonkey.getConsoleErrorWriter().println("getPluginType() returned an invalid value: " + retval);
                     return false;
                 }
             }
         }
-        con.flush();
+        ScriptMonkey.flushConsole();
         return scriptEvalsOK;
     }
 
@@ -212,7 +210,7 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
     public synchronized void unloadPlugin() {
         if (scriptEvalsOK && monkey != null) {
             monkey.ambivalentCall("unload");
-            ScriptMonkey.getSharedConsole().flush();
+            ScriptMonkey.flushConsole();
         }
         monkey = null;
         scriptEvalsOK = false;
@@ -273,7 +271,7 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
         if (show) {
             m.ambivalentCall(show ? "run" : "hide");
 //                ((PluginContextImpl) context).synchronize();
-            ScriptMonkey.getSharedConsole().flush();
+            ScriptMonkey.flushConsole();
         }
     }
 
@@ -289,7 +287,7 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
         if (scriptEvalsOK && m != null) {
             Object retval = m.ambivalentCall("isShowing");
             if (retval != null && retval instanceof Boolean) {
-                ScriptMonkey.getSharedConsole().flush();
+                ScriptMonkey.flushConsole();
                 return ((Boolean) retval);
             }
         }
@@ -360,12 +358,12 @@ public class DefaultScriptedPlugin implements Plugin, ScriptedPlugin {
             if (scriptEvalsOK && m != null) {
                 Object retval = m.ambivalentCall("getPluginIcon");
                 if (retval != null && retval instanceof ThemedIcon) {
-                    ScriptMonkey.getSharedConsole().flush();
+                    ScriptMonkey.flushConsole();
                     return (ThemedIcon) retval;
                 }
                 retval = m.ambivalentCall("getRepresentativeImage");
                 if (retval != null && retval instanceof BufferedImage) {
-                    ScriptMonkey.getSharedConsole().flush();
+                    ScriptMonkey.flushConsole();
                     return new ThemedSingleImageIcon((BufferedImage) retval);
                 }
             }

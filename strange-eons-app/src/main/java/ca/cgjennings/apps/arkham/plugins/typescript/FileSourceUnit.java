@@ -49,7 +49,7 @@ public class FileSourceUnit extends SourceUnit {
             } catch (IOException ioex) {
                 // problem reading file (bad media, no permissionsm, etc.)
                 // update with "null", but also print an error message
-                PrintWriter err = ScriptMonkey.getSharedConsole().getErrorWriter();
+                PrintWriter err = ScriptMonkey.getConsoleErrorWriter();
                 err.println(Language.string("rk-err-reading-script", file));
                 ScriptMonkey.scriptError(ioex);
                 err.flush();

@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.logging.Level;
+import javax.script.ScriptException;
 import javax.swing.SwingUtilities;
 
 /**
@@ -49,6 +50,18 @@ final class ScriptRunnerModeHelper implements ScriptRunnerState {
      * alive mode was enabled.
      */
     void run() {
+        execute();
+        if (!keepAlive) {
+            StrangeEons.getWindow().exitApplication(false);
+        }
+    }
+
+    /**
+     * Runs the script without exiting the application.
+     *
+     * @return {@code true} if the script completed without an uncaught error
+     */
+    boolean execute() {
         if (!SwingUtilities.isEventDispatchThread()) {
             throw new IllegalThreadStateException();
         }
@@ -58,32 +71,39 @@ final class ScriptRunnerModeHelper implements ScriptRunnerState {
 
         runState = STATE_STARTED;
 
-        String toRun = null;
+        String toRun;
         try {
             toRun = ProjectUtilities.getFileAsString(script, ProjectUtilities.ENC_SCRIPT);
         } catch (IOException loadFail) {
             keepAlive = false;
             System.err.println("Could not read script \"" + script + '"');
             System.err.println(loadFail.getLocalizedMessage());
+            return false;
         }
 
-        if (toRun != null) {
-            try {
-                ScriptMonkey monkey = new ScriptMonkey(script.getName());
-                monkey.bind(PluginContextFactory.createDummyContext());
-                monkey.eval(toRun);
-            } catch (Throwable t) {
-                // uncaught exceptions will be printed to the console
-                // for debugging purposes, then the app will exit
-                keepAlive = false;
-                StrangeEons.log.log(Level.SEVERE, "uncaught exception thrown by \"" + script + '\"', t);
-            } finally {
-                runState = STATE_FINISHED;
+        try {
+            ScriptMonkey monkey = new ScriptMonkey(script.getName());
+            monkey.bind(PluginContextFactory.createDummyContext());
+            monkey.evalChecked(toRun);
+            return true;
+        } catch (ScriptException se) {
+            if (ScriptMonkey.isExitRequest(se)) {
+                return true;
             }
-        }
-
-        if (!keepAlive) {
-            StrangeEons.getWindow().exitApplication(false);
+            StrangeEons.log.log(Level.WARNING, "evaluation failed: " + script, se);
+            ScriptMonkey.scriptError(se);
+            return false;
+        } catch (Throwable t) {
+            // uncaught exceptions will be printed to the console
+            // for debugging purposes, then the app will exit
+            keepAlive = false;
+            if (ScriptMonkey.isExitRequest(t)) {
+                return true;
+            }
+            StrangeEons.log.log(Level.SEVERE, "uncaught exception thrown by \"" + script + '\"', t);
+            return false;
+        } finally {
+            runState = STATE_FINISHED;
         }
     }
 

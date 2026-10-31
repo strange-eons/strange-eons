@@ -9,6 +9,7 @@ import java.awt.EventQueue;
 import java.awt.GraphicsConfiguration;
 import java.awt.IllegalComponentStateException;
 import java.awt.Insets;
+import java.awt.GraphicsEnvironment;
 import java.awt.MouseInfo;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -543,7 +544,7 @@ public class JUtilities {
     private static final int[] BUTTON_MASKS;
 
     static {
-        final int BTNS = MouseInfo.getNumberOfButtons();
+        final int BTNS = GraphicsEnvironment.isHeadless() ? 3 : MouseInfo.getNumberOfButtons();
         BUTTON_MASKS = new int[Math.max(3, BTNS)];
         BUTTON_MASKS[0] = MouseEvent.BUTTON1_DOWN_MASK;
         BUTTON_MASKS[1] = MouseEvent.BUTTON2_DOWN_MASK;

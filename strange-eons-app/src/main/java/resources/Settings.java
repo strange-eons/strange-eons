@@ -2757,7 +2757,7 @@ public class Settings implements Serializable, Iterable<String> {
      * @since 2.1
      */
     public static final PropertyChangeListener DEBUG_LISTENER = (PropertyChangeEvent evt) -> {
-        PrintWriter pw = ScriptMonkey.getSharedConsole().getErrorWriter();
+        PrintWriter pw = ScriptMonkey.getConsoleErrorWriter();
         pw.format("[%s]: ", evt.getPropertyName());
         if (evt.getOldValue() == null) {
             if (evt.getNewValue() == null) {

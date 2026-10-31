@@ -312,7 +312,7 @@ public final class DIYSheet extends Sheet<DIY> {
             if (warnPortrait) {
                 return;
             }
-            ScriptMonkey.getSharedConsole().getErrorWriter().println(
+            ScriptMonkey.getConsoleErrorWriter().println(
                     "DIY component called paintPortrait, but no portrait key was set: " + diy
             );
             warnPortrait = true;
@@ -384,7 +384,7 @@ public final class DIYSheet extends Sheet<DIY> {
             if (warnPortrait) {
                 return;
             }
-            ScriptMonkey.getSharedConsole().getErrorWriter().println(
+            ScriptMonkey.getConsoleErrorWriter().println(
                     "DIY component called paintMarkerPortrait, but no portrait key was set: " + diy
             );
             warnPortrait = true;

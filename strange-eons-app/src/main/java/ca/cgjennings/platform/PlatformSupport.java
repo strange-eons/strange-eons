@@ -1,5 +1,6 @@
 package ca.cgjennings.platform;
 
+import java.awt.GraphicsEnvironment;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -274,30 +275,37 @@ public class PlatformSupport {
         return KeyStroke.getKeyStroke(stroke);
     }
     private static final Pattern menuKeyPattern = Pattern.compile("menu\\s", Pattern.CASE_INSENSITIVE);
-    private static final String menuKeyReplacement = getMenuKeyReplacement();
 
-    @SuppressWarnings("deprecation")
+    /**
+     * Returns the extended modifier mask of the platform's menu accelerator
+     * key. Unlike the AWT toolkit, this also works in a headless environment.
+     *
+     * @return the menu accelerator mask, such as
+     * {@link InputEvent#CTRL_DOWN_MASK}
+     */
+    public static int getMenuShortcutMask() {
+        if (GraphicsEnvironment.isHeadless()) {
+            return PLATFORM_IS_MAC ? InputEvent.META_DOWN_MASK : InputEvent.CTRL_DOWN_MASK;
+        }
+        return Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+    }
+
     private static String getMenuKeyReplacement() {
-        //
-        // Uses deprecated ALT_MASK instead of ALT_DOWN_MASK, etc.,
-        // but until there is something like getMenuShortcutKeyMaskEx
-        // we have no choice.
-        //
-        int mask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMask();
+        int mask = getMenuShortcutMask();
         String actualKey;
         switch (mask) {
-            case InputEvent.ALT_MASK:
+            case InputEvent.ALT_DOWN_MASK:
                 actualKey = "alt ";
                 break;
-            case InputEvent.META_MASK:
+            case InputEvent.META_DOWN_MASK:
                 actualKey = "meta ";
                 break;
-            case InputEvent.SHIFT_MASK:
+            case InputEvent.SHIFT_DOWN_MASK:
                 actualKey = "shift ";
                 break;
             default:
                 actualKey = "ctrl ";
-                if (mask != InputEvent.CTRL_MASK) {
+                if (mask != InputEvent.CTRL_DOWN_MASK) {
                     System.err.println("Warning: unknown menu accelerator mask; using CTRL instead");
                 }
         }
@@ -329,4 +337,7 @@ public class PlatformSupport {
         PLATFORM_IS_MAC = PLATFORM_IS_OSX = os.contains("mac") || os.contains("darwin");
         PLATFORM_IS_OTHER = !(PLATFORM_IS_WINDOWS || PLATFORM_IS_MAC);
     }
+
+    // depends on the platform flags, so it must be initialized after them
+    private static final String menuKeyReplacement = getMenuKeyReplacement();
 }

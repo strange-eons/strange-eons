@@ -448,13 +448,16 @@ public class Preferences extends javax.swing.JDialog implements AgnosticDialog {
     private static boolean isSorted = true;
 
     static {
-        registerCategory(new CatLanguage(), false);
-        registerCategory(new CatTheme(), false);
-        registerCategory(new CatContextBar(), false);
-        registerCategory(new CatReservedCloudFonts(), false);
-        registerCategory(new CatDesignSupport(), false);
-        registerCategory(new CatDrawPerformance(), false);
-        registerCategory(new CatPlugins(), false);
+        // the built-in categories are UI panels, and the dialog can't be shown
+        if (!java.awt.GraphicsEnvironment.isHeadless()) {
+            registerCategory(new CatLanguage(), false);
+            registerCategory(new CatTheme(), false);
+            registerCategory(new CatContextBar(), false);
+            registerCategory(new CatReservedCloudFonts(), false);
+            registerCategory(new CatDesignSupport(), false);
+            registerCategory(new CatDrawPerformance(), false);
+            registerCategory(new CatPlugins(), false);
+        }
     }
 
     /**

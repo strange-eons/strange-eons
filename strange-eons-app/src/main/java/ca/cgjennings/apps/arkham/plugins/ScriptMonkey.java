@@ -9,6 +9,8 @@ import ca.cgjennings.apps.arkham.plugins.debugging.ScriptDebugging;
 import ca.cgjennings.apps.arkham.plugins.engine.ScriptEngineMetrics;
 import ca.cgjennings.apps.arkham.plugins.engine.SEScriptEngineFactory;
 import ca.cgjennings.apps.arkham.plugins.engine.SettingBindings;
+import java.awt.GraphicsEnvironment;
+import java.io.PrintWriter;
 import java.awt.EventQueue;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -94,8 +96,8 @@ public final class ScriptMonkey {
         setInternalFileName(scriptFileName);
 
         ScriptContext context = engine.getContext();
-        context.setWriter(console.getWriter());
-        context.setErrorWriter(console.getErrorWriter());
+        context.setWriter(getConsoleWriter());
+        context.setErrorWriter(getConsoleErrorWriter());
         if (ScriptEngineMetrics.ENABLED) {
             ScriptEngineMetrics.scriptMonkeyCreated(System.nanoTime() - start);
         }
@@ -165,17 +167,97 @@ public final class ScriptMonkey {
         Preferences.addPreferenceUpdateListener(ScriptMonkey::updateScriptEngineOpimizationSettings);
 
         // create the shared console
-        console = new ScriptConsole(StrangeEons.getWindow());
-        console.setIconImages(StrangeEonsAppWindow.getApplicationFrameIcons());
+        if (!GraphicsEnvironment.isHeadless()) {
+            console = new ScriptConsole(StrangeEons.getWindow());
+            console.setIconImages(StrangeEonsAppWindow.getApplicationFrameIcons());
+        }
     }
 
     /**
      * Returns the shared script console.
      *
-     * @return the script output window
+     * @return the script output window, or {@code null} if the application is
+     * running headless
+     * @see #getConsoleWriter()
+     * @see #getConsoleErrorWriter()
      */
     public static ScriptConsole getSharedConsole() {
         return console;
+    }
+
+    /**
+     * Returns a writer for script output: the shared console's output stream,
+     * or standard output if the application is running headless.
+     *
+     * @return the script output writer
+     */
+    public static PrintWriter getConsoleWriter() {
+        return console == null ? HeadlessStreams.OUT : console.getWriter();
+    }
+
+    /**
+     * Returns a writer for script errors: the shared console's error stream,
+     * or standard error if the application is running headless.
+     *
+     * @return the script error writer
+     */
+    public static PrintWriter getConsoleErrorWriter() {
+        return console == null ? HeadlessStreams.ERR : console.getErrorWriter();
+    }
+
+    /**
+     * Returns a writer for script warnings: the shared console's warning
+     * stream, or standard error if the application is running headless.
+     *
+     * @return the script warning writer
+     */
+    public static PrintWriter getConsoleWarningWriter() {
+        return console == null ? HeadlessStreams.ERR : console.getWarningWriter();
+    }
+
+    /**
+     * Flushes pending script output.
+     */
+    public static void flushConsole() {
+        if (console == null) {
+            HeadlessStreams.OUT.flush();
+            HeadlessStreams.ERR.flush();
+        } else {
+            console.flush();
+        }
+    }
+
+    private static final class HeadlessStreams {
+
+        static final PrintWriter OUT = new HeadlessConsoleWriter(System.out);
+        static final PrintWriter ERR = new HeadlessConsoleWriter(System.err);
+    }
+
+    /**
+     * Stands in for the console's writers when running headless. Scripts can
+     * call the same methods, but only text is written.
+     */
+    public static final class HeadlessConsoleWriter extends PrintWriter {
+
+        private HeadlessConsoleWriter(java.io.PrintStream target) {
+            super(target, true);
+        }
+
+        public void printObj(Object obj) {
+            print(obj);
+        }
+
+        public void queue() {
+        }
+
+        public void insertImage(Object image) {
+        }
+
+        public void insertComponent(Object component) {
+        }
+
+        public void insertHTML(String html) {
+        }
     }
 
     /**
@@ -300,6 +382,18 @@ public final class ScriptMonkey {
     }
 
     /**
+     * Evaluates a script stored in a string, leaving any error for the caller
+     * to handle.
+     *
+     * @param s the script code to execute
+     * @return the return value of the script code, if any
+     * @throws ScriptException if the script throws an uncaught error
+     */
+    public Object evalChecked(String s) throws ScriptException {
+        return evaluate(s);
+    }
+
+    /**
      * Call a script function, returning {@code null} without displaying an
      * error if the method does not exist. If a script error occurs, an error
      * message is displayed and {@code null} is returned.
@@ -378,6 +472,21 @@ public final class ScriptMonkey {
     }
 
     /**
+     * Returns whether an exception was thrown by a script calling
+     * {@code exit()}, rather than by an error.
+     *
+     * @param t the exception thrown while running a script
+     * @return {@code true} if the script stopped itself
+     */
+    public static boolean isExitRequest(Throwable t) {
+        if (t.getClass().getName().endsWith("$BreakException")) {
+            return true;
+        }
+        String message = t.getMessage();
+        return message != null && message.contains("BreakException") && message.contains(ScriptMonkey.class.getPackage().getName());
+    }
+
+    /**
      * Handles an error as if it was an uncaught exception thrown from a script.
      *
      * @param se the script exception (or pseudo-script exception) to handle
@@ -393,16 +502,16 @@ public final class ScriptMonkey {
 
         boolean fullStackTrace = Settings.getShared().getYesNo("script-full-exception-trace");
 
-        ScriptConsole.ConsolePrintWriter out = getSharedConsole().getWriter();
-        ScriptConsole.ConsolePrintWriter err = getSharedConsole().getErrorWriter();
+        PrintWriter out = getConsoleWriter();
+        PrintWriter err = getConsoleErrorWriter();
         out.flush();
         err.flush();
 
         // check for exit() command
-        String message = se.getMessage();
-        if (message != null && message.contains("BreakException") && message.contains(ScriptMonkey.class.getPackage().getName())) {
+        if (isExitRequest(se)) {
             return;
         }
+        String message = se.getMessage();
 
         // the real exception created by the script is the cause
         Throwable cause = se.getCause();
@@ -485,7 +594,7 @@ public final class ScriptMonkey {
             // dump the full trace to stderr
             rex.printStackTrace(System.err);
             if (fullStackTrace) {
-                rex.printStackTrace(console.getErrorWriter());
+                rex.printStackTrace(err);
             }
             return;
         }
@@ -493,7 +602,7 @@ public final class ScriptMonkey {
         // exception not intentionally made by script system?
         se.printStackTrace(err);
         if (fullStackTrace) {
-            se.printStackTrace(console.getErrorWriter());
+            se.printStackTrace(err);
         }
     }
 

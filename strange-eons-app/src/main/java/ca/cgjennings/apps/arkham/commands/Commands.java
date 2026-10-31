@@ -1405,6 +1405,9 @@ public class Commands {
 
         // check editor, if any
         StrangeEonsAppWindow win = StrangeEons.getWindow();
+        if (win == null) {
+            return null;
+        }
         StrangeEonsEditor ed = win.getActiveEditor();
         if (ed != null && ed.isCommandApplicable(command)) {
             return ed;
