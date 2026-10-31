@@ -115,8 +115,9 @@ class MarkupRendererBugsTest {
 
     @Test
     @Disabled("BUG: without fractional metrics, advances round to whole units "
-            + "at small scaled sizes and the single-pass scale can overshoot: "
-            + "this text returns 219 in a 200-wide region.")
+            + "at small scaled sizes and the single-pass scale can overshoot. "
+            + "The result varies by platform font: 219 in this 200-wide region "
+            + "on macOS and Linux, 139 in a 100-wide region on Windows.")
     void drawAsSingleLineShouldNotOverflowRegion() {
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("Hello, world. ".repeat(10));
