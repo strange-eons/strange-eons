@@ -285,7 +285,7 @@ class ParametricStyleFactoriesTest {
         TextStyle style = FontFamilyStyleFactory.getShared()
                 .createStyle(null, new String[] {"Monospaced"});
         assertTrue(style.contains(TextAttribute.FAMILY));
-        // ResourceKit normalises the name; for the standard "Monospaced"
+        // ResourceKit normalizes the name; for the standard "Monospaced"
         // family it should pass through unchanged.
         assertEquals("Monospaced", style.get(TextAttribute.FAMILY));
     }

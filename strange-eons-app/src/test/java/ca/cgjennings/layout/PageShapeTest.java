@@ -95,7 +95,7 @@ class PageShapeTest {
     // ---- CompoundShape ----------------------------------------------
     //
     // CompoundShape(top, y, bottom): switches between the two shapes
-    // at the y boundary; behaviour at the boundary takes the max.
+    // at the y boundary; behavior at the boundary takes the max.
 
     @Test
     void compoundShapeUsesTopShapeAboveBoundary() {

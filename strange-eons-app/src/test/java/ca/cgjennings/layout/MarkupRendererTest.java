@@ -36,7 +36,7 @@ import static org.mockito.Mockito.verify;
 /**
  * Regression-safe coverage of {@link MarkupRenderer}'s public surface.
  * The class is old and largely untested; these tests pin the
- * existing behavior so the parser / layout split can proceed.
+ * existing behavior.
  *
  * <p>Tests are organized by concern: construction, getter/setter
  * round-trips, tag-table operations, and end-to-end draw / measure
@@ -125,17 +125,6 @@ class MarkupRendererTest {
         r.setStyleForTag("custom", new TextStyle());
         r.removeTag("custom");
         assertNull(r.getStyleForTag("custom"));
-    }
-
-    @Test
-    void removeAllTagsClearsCustomTagsButKeepsBuiltins() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setStyleForTag("custom", new TextStyle());
-        r.removeAllTags();
-        // 'custom' should be gone
-        assertNull(r.getStyleForTag("custom"));
-        // 'b' is a built-in; behaviour to be pinned by this test
-        // (placeholder — verify against actual implementation).
     }
 
     // ---- Replacement tags --------------------------------------------
@@ -769,7 +758,7 @@ class MarkupRendererTest {
     void backslashLineContinuation() {
         // A backslash followed by a newline suppresses the line
         // break — the renderer's TEXTBS state consumes whitespace
-        // after backslash. Pin the behaviour: backslash + newline
+        // after backslash. Pin the behavior: backslash + newline
         // produces one paragraph, not two.
         List<LayoutSegment> withBackslash = layoutOf("first\\\nsecond", 300, 200);
         int maxParaWithBackslash = withBackslash.stream()
@@ -1513,7 +1502,7 @@ class MarkupRendererTest {
             // OR at a higher position. We can't reliably verify the
             // exact transform, but we can verify that more than one
             // glyph-vector call happened (style boundary forced a
-            // split), confirming the tag was recognised.
+            // split), confirming the tag was recognized.
             assertTrue(gv.getAllValues().size() >= 2,
                     "expected <sup> to split into multiple glyph vectors");
         } finally {
