@@ -36,6 +36,8 @@ jobs:
       - name: Parse version
         id: parse
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           RAW="${GITHUB_REF#refs/tags/v}"
@@ -57,15 +59,15 @@ jobs:
             beta*)  TYPE=BETA ;;
             *)      TYPE=DEVELOPMENT ;;
           esac
-          # Build number anchored above upstream's last release (v3.4.4421-alpha).
-          # Counts commits past that anchor so numbers are monotonic on this branch.
-          ANCHOR_TAG=v3.4.4421-alpha
-          if git rev-parse --verify -q "$ANCHOR_TAG" >/dev/null; then
-            COMMITS_PAST=$(git rev-list --count "$ANCHOR_TAG..HEAD")
-          else
-            COMMITS_PAST=$(git rev-list --count HEAD)
+          # Build number above upstream's last release (4421). Counts all commits
+          # so it doesn't depend on which tags are on the remote.
+          BUILD=$((4421 + $(git rev-list --count HEAD)))
+          LATEST=$(gh release list --limit 1000 --json name \
+            --jq '[.[].name | capture("build (?<n>[0-9]+)").n | tonumber] | max // 0')
+          if (( BUILD < LATEST )); then
+            echo "::error::Build $BUILD is below the latest published build $LATEST"
+            exit 1
           fi
-          BUILD=$((4421 + COMMITS_PAST))
           TAG="v$MAJOR.$MINOR.$PATCH${SUFFIX:+-$SUFFIX}"
           echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
           echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
