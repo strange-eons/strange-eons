@@ -46,18 +46,11 @@ class MarkupRendererBugsTest {
     }
 
     @Test
-    @Disabled("BUG: a definition that expands to itself never grows the source "
-            + "line, so the expansion limit check never fires and parsing "
-            + "loops forever. <define loop \"<loop>\"><loop> freezes the caller.")
     void selfReferencingDefinitionShouldNotHangLayout() throws InterruptedException {
         assertLayoutFinishes("<define loop \"<loop>\"><loop>");
     }
 
     @Test
-    @Disabled("BUG: exceeding the expansion limit should show the overflow message "
-            + "as the paragraph text, but the failed paragraph never records its "
-            + "tab list, so renderText throws NullPointerException. A growing "
-            + "definition or an oversized <repeat> reaches this from markup.")
     void exceedingExpansionLimitShouldNotThrow() {
         MarkupRenderer r = new MarkupRenderer();
         r.setExpansionLimit(100);

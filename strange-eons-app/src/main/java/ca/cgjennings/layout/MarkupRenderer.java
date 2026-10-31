@@ -1360,7 +1360,13 @@ public class MarkupRenderer {
             try {
                 paragraphs[line] = createStyledParagraph(lines[line]);
             } catch (StackOverflowError soe) {
-                paragraphs[line] = new StyledParagraph(soe.getLocalizedMessage());
+                String message = String.valueOf(soe.getLocalizedMessage());
+                paragraphs[line] = new StyledParagraph(message);
+                // discard what the failed paragraph recorded
+                tabs.clearCurrentLine();
+                tabs.addTab(message.length());
+                closeOutstandingStyles(0, true);
+                finishedStyles.clear();
             }
         }
 
@@ -1501,6 +1507,7 @@ public class MarkupRenderer {
     protected String currentTagNoCase;
     protected String currentParametricTag;
     protected StringBuilder currentSourceLine;
+    private int currentReplacementCount;
     protected HashMap<String, LinkedList<StyleMark>> styleStackMap = new HashMap<>();
     protected LinkedList<StyleMark> finishedStyles = new LinkedList<>();
     protected boolean textHasWhitespace;
@@ -1518,6 +1525,7 @@ public class MarkupRenderer {
         // us to replace and then re-process a section of text; a replacement
         // tag may replace itself with tagged material to be parsed
         currentSourceLine = new StringBuilder(source);
+        currentReplacementCount = 0;
         final int MAXIMUM_SOURCE_SIZE = source.length() + bufferLimit;
 
         // holds the raw text (without tags) as we process the line
@@ -1529,9 +1537,11 @@ public class MarkupRenderer {
         int state = TEXT;
 
         for (currentIndex = 0; currentIndex < currentSourceLine.length(); ++currentIndex) {
-            if (currentSourceLine.length() > MAXIMUM_SOURCE_SIZE) {
+            // a replacement the same size as its tag never grows the line, so
+            // also limit the number of replacements
+            if (currentSourceLine.length() > MAXIMUM_SOURCE_SIZE || currentReplacementCount > MAXIMUM_SOURCE_SIZE) {
                 throw new StackOverflowError(
-                        "Probable infinite recursion while expanding definition: " + currentSourceLine.substring(currentSourceLine.length() - 80));
+                        "Probable infinite recursion while expanding definition: " + currentSourceLine.substring(Math.max(0, currentSourceLine.length() - 80)));
             }
             char c = currentSourceLine.charAt(currentIndex);
 
@@ -2069,6 +2079,7 @@ public class MarkupRenderer {
      * may contain tags, and if so, they will also be parsed.
      */
     protected void replaceTagWith(String replacement) {
+        ++currentReplacementCount;
         currentIndex = currentTagStartingIndex - 1; // -1 since index will be incremented
 
         currentSourceLine.delete(currentTagStartingIndex, currentTagEndingIndex + 1);
@@ -2316,6 +2327,10 @@ public class MarkupRenderer {
 
         public void setCurrentLine(int line) {
             this.line = line;
+        }
+
+        public void clearCurrentLine() {
+            tabLists[line] = null;
         }
 
         public void addTab(int index) {

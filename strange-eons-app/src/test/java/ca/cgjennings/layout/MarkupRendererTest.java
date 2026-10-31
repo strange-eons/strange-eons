@@ -2353,6 +2353,67 @@ class MarkupRendererTest {
         assertThrows(IllegalArgumentException.class, () -> MarkupRenderer.setDefaultExpansionLimit(0));
     }
 
+    private static final String OVERFLOW_MESSAGE = "Probable infinite recursion";
+
+    @Test
+    void selfReferencingDefinitionShowsOverflowMessage() {
+        assertTrue(parsedText("<define loop \"<loop>\"><loop>").startsWith(OVERFLOW_MESSAGE));
+    }
+
+    @Test
+    void mutuallyRecursiveDefinitionsShowOverflowMessage() {
+        String text = parsedText("<define a \"<bb>\"><define bb \"<a>\"><a>");
+        assertTrue(text.startsWith(OVERFLOW_MESSAGE), text);
+    }
+
+    @Test
+    void growingDefinitionShowsOverflowMessage() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setExpansionLimit(100);
+        String text = parsedText(r, "<define grow \"x<grow>\"><grow>");
+        assertTrue(text.startsWith(OVERFLOW_MESSAGE), text);
+    }
+
+    @Test
+    void oversizedRepeatShowsOverflowMessage() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setExpansionLimit(5);
+        String text = parsedText(r, "<repeat 100 a>");
+        assertTrue(text.startsWith(OVERFLOW_MESSAGE), text);
+    }
+
+    @Test
+    void overflowInShortLineDoesNotFailBuildingMessage() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setExpansionLimit(5);
+        String text = parsedText(r, "<repeat 10 abc>");
+        assertTrue(text.startsWith(OVERFLOW_MESSAGE), text);
+    }
+
+    @Test
+    void overflowOnlyReplacesItsOwnParagraph() {
+        String[] lines = parsedText("before\n<define loop \"<loop>\"><loop>\nafter").split("\n");
+        assertEquals(3, lines.length);
+        assertEquals("before", lines[0]);
+        assertTrue(lines[1].startsWith(OVERFLOW_MESSAGE));
+        assertEquals("after", lines[2]);
+    }
+
+    @Test
+    void overflowDiscardsTabsAndStylesFromFailedParagraph() {
+        String markup = "a\t<b>b\t<define loop \"<loop>\"><loop>\nafter</b>";
+        List<LayoutSegment> segments = layoutOf(markup, 2000, 200);
+        assertEquals(1, segments.stream().filter(s -> s.getSourceParagraphIndex() == 0).count());
+        assertEquals(1, segments.stream().filter(s -> s.getSourceParagraphIndex() == 1).count());
+        List<Font> fonts = fontsRendered(markup);
+        assertTrue(fonts.get(fonts.size() - 1).isBold(), "open style carries into next paragraph");
+    }
+
+    @Test
+    void manyLegitimateExpansionsAreAllowed() {
+        assertEquals("\u2014".repeat(5_000), parsedText("<repeat 5000 \"<emdash>\">"));
+    }
+
     // ---- Tag parameters ----------------------------------------------
 
     @Test
