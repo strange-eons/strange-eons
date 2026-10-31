@@ -14,6 +14,7 @@ subprojects {
         }
         tasks.withType<Test>().configureEach {
             useJUnitPlatform()
+            systemProperty("apple.awt.UIElement", "true")
             finalizedBy("jacocoTestReport")
             testLogging {
                 exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
