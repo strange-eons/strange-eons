@@ -925,7 +925,10 @@ class MarkupRendererTest {
      * one line per paragraph.
      */
     private static String parsedText(String markup) {
-        MarkupRenderer r = new MarkupRenderer();
+        return parsedText(new MarkupRenderer(), markup);
+    }
+
+    private static String parsedText(MarkupRenderer r, String markup) {
         r.setMarkupText(markup);
         try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
             r.measure(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
@@ -2168,6 +2171,237 @@ class MarkupRendererTest {
 
     private static List<Float> xOffsets(List<LayoutSegment> segments) {
         return segments.stream().map(LayoutSegment::getXOffset).toList();
+    }
+
+    // ---- Macro parameters --------------------------------------------
+
+    @Test
+    void macroSubstitutesParametersInOrder() {
+        assertEquals("b+a", parsedText("<define swap \"@2;+@1;\"><swap a b>"));
+    }
+
+    @Test
+    void macroParameterCanRepeatAndExtrasAreIgnored() {
+        assertEquals("aa", parsedText("<define twice @1;@1;><twice a b>"));
+    }
+
+    @Test
+    void macroPreservesParameterCase() {
+        assertEquals("MixedCase", parsedText("<define echo @1;><ECHO MixedCase>"));
+    }
+
+    @Test
+    void missingOrInvalidMacroParameterShowsPlaceholder() {
+        assertEquals("?2?", parsedText("<define m @2;><m a>"));
+        assertEquals("?0?", parsedText("<define m @0;><m a>"));
+        assertEquals("?-1?", parsedText("<define m @-1;><m a>"));
+        assertEquals("?x?", parsedText("<define m @x;><m a>"));
+        assertEquals("??", parsedText("<define m @;><m a>"));
+    }
+
+    @Test
+    void definitionUsedWithoutParametersShowsPlaceholder() {
+        assertEquals("?1?", parsedText("<define m @1;><m>"));
+    }
+
+    @Test
+    void unterminatedMacroReferenceDropsRestOfDefinition() {
+        assertEquals("a", parsedText("<define mail a@b.com><mail>"));
+    }
+
+    @Test
+    void exactNameMatchWinsOverParametricMatch() {
+        assertEquals("exact,parametric",
+                parsedText("<define \"m x\" exact><define m parametric><m x>,<m y>"));
+    }
+
+    @Test
+    void definitionsAreClearedAfterEachParse() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertEquals("x", parsedText(r, "<define d x><d>"));
+        assertEquals(" ", parsedText(r, "<d>"));
+    }
+
+    @Test
+    void macroExpansionIsReparsed() {
+        List<Font> fonts = fontsRendered("<define bold \"<b>@1;</b>\"><bold x>");
+        assertTrue(fonts.get(0).isBold());
+    }
+
+    @Test
+    void definitionShadowsBuiltInStyle() {
+        assertEquals("x", parsedText("<define b x><b>"));
+    }
+
+    @Test
+    void definitionTakesEffectOnlyAfterItsTag() {
+        assertEquals("x", parsedText("<later><define later x><later>"));
+    }
+
+    @Test
+    void definitionWinsOverReplacementOfSameName() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setReplacementForTag("name", "replacement");
+        assertEquals("definition,", parsedText(r, "<define name definition><name>,"));
+        assertEquals("replacement,", parsedText(r, "<name>,"));
+    }
+
+    @Test
+    void replacementTagsDoNotExpandMacroParameters() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setReplacementForTag("name", "x@1;");
+        assertEquals("x@1;", parsedText(r, "<name>"));
+    }
+
+    @Test
+    void tagsBeginningWithDefineAreTreatedAsDefine() {
+        // The handler tests startsWith, so <defined> also defines.
+        assertEquals("y", parsedText("<defined x y><x>"));
+    }
+
+    @Test
+    void repeatKeySubstitutesItsValue() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertEquals("7-a", r.replaceMacroParameters("@i;-@1;", new String[]{"a"}, "i", "7"));
+    }
+
+    // ---- Repeat ------------------------------------------------------
+
+    @Test
+    void repeatExpandsContent() {
+        assertEquals("ababab", parsedText("<repeat 3 ab>"));
+    }
+
+    @Test
+    void repeatTagIsCaseInsensitiveAndKeepsContentCase() {
+        assertEquals("AbAb", parsedText("<REPEAT 2 Ab>"));
+    }
+
+    @Test
+    void repeatContentIsReparsed() {
+        List<Font> fonts = fontsRendered("<repeat 2 \"<b>x</b>\">");
+        assertTrue(fonts.get(0).isBold());
+        assertEquals("xx", parsedText("<repeat 2 \"<b>x</b>\">"));
+    }
+
+    @Test
+    void nestedRepeatMultiplies() {
+        assertEquals("aaaa", parsedText("<repeat 2 \"<repeat 2 a>\">"));
+    }
+
+    @Test
+    void repeatAcceptsLimitAndDropsCountsOutsideRange() {
+        assertEquals(10_000, parsedText("<repeat 10000 a>").length());
+        for (String count : List.of("0", "-1", "10001", "many")) {
+            assertEquals("xy", parsedText("x<repeat " + count + " a>y"), count);
+        }
+    }
+
+    @Test
+    void repeatWithWrongParameterCountIsDropped() {
+        assertEquals("xy", parsedText("x<repeat>y"));
+        assertEquals("xy", parsedText("x<repeat 2>y"));
+        assertEquals("xy", parsedText("x<repeat 2 a b>y"));
+    }
+
+    // ---- Expansion limit ---------------------------------------------
+
+    @Test
+    void expansionLimitRoundTrips() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertEquals(MarkupRenderer.getDefaultExpansionLimit(), r.getExpansionLimit());
+        r.setExpansionLimit(10);
+        assertEquals(10, r.getExpansionLimit());
+    }
+
+    @Test
+    void defaultExpansionLimitRejectsValuesBelowOne() {
+        assertThrows(IllegalArgumentException.class, () -> MarkupRenderer.setDefaultExpansionLimit(0));
+    }
+
+    // ---- Tag parameters ----------------------------------------------
+
+    @Test
+    void parametersSplitOnWhitespace() {
+        assertEquals(List.of("a", "b", "c"), tagParameters("<p a  b\tc>"));
+    }
+
+    @Test
+    void tagWithoutParametersHasNone() {
+        assertEquals(List.of(), tagParameters("<p>"));
+    }
+
+    @Test
+    void parametersPreserveCase() {
+        assertEquals(List.of("MixedCase"), tagParameters("<P MixedCase>"));
+    }
+
+    @Test
+    void quotedParameterKeepsWhitespaceAndAngleBrackets() {
+        assertEquals(List.of("a b", "c>d", "e"), tagParameters("<p \"a b\" \"c>d\" e>"));
+    }
+
+    @Test
+    void emptyQuotedParameterIsKept() {
+        assertEquals(List.of("", "a"), tagParameters("<p \"\" a>"));
+    }
+
+    @Test
+    void quotedParameterEscapes() {
+        assertEquals(List.of("a\"b"), tagParameters("<p \"a\\\"b\">"));
+        assertEquals(List.of("a\\b"), tagParameters("<p \"a\\\\b\">"));
+        assertEquals(List.of("a\\nb"), tagParameters("<p \"a\\nb\">"));
+    }
+
+    @Test
+    void escapedQuoteDoesNotEndTagParsing() {
+        assertEquals(List.of("a\">b"), tagParameters("<p \"a\\\">b\">"));
+    }
+
+    @Test
+    void backslashIsLiteralOutsideQuotes() {
+        assertEquals(List.of("a\\b"), tagParameters("<p a\\b>"));
+    }
+
+    @Test
+    void closingQuoteEndsParameterWithoutWhitespace() {
+        assertEquals(List.of("a", "b"), tagParameters("<p \"a\"b>"));
+    }
+
+    @Test
+    void quoteInsideUnquotedParameterIsLiteral() {
+        assertEquals(List.of("a\"b", "c\""), tagParameters("<p a\"b c\">"));
+    }
+
+    @Test
+    void quotedNewlineAndBreakTagsDoNotSplitParagraph() {
+        assertEquals(List.of("a\nb"), tagParameters("<p \"a\nb\">"));
+        assertEquals(List.of("a<br>b"), tagParameters("<p \"a<br>b\">"));
+        assertEquals(List.of("<h1>"), tagParameters("<p \"<h1>\">"));
+        assertEquals("xy", parsedText("x<unknown \"a\nb<br>c<h1>\">y"));
+    }
+
+    @Test
+    void escapedQuoteSurvivesParagraphSplitting() {
+        assertEquals("xy\nz", parsedText("x<unknown \"a\\\"\nb\">y\nz"));
+    }
+
+    @Test
+    void unterminatedQuoteDropsRestOfMarkup() {
+        assertEquals("x", parsedText("x<p \"a>y\nz"));
+    }
+
+    private static List<String> tagParameters(String markup) {
+        List<String> params = new ArrayList<>();
+        MarkupRenderer r = new MarkupRenderer() {
+            @Override
+            protected String handleUnknownTag(String tagNameLower, String tagNameOriginal) {
+                params.addAll(List.of(getTagParameters()));
+                return null;
+            }
+        };
+        parsedText(r, markup);
+        return params;
     }
 
     // ---- Test scaffolding --------------------------------------------

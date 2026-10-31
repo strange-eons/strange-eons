@@ -311,10 +311,36 @@ class MarkupRendererBugsTest {
             + "without a tab in the text. <tabwidth garbage garbage> reaches "
             + "this from markup.")
     void allZeroTabWidthsShouldNotHangLayout() throws InterruptedException {
-        // A daemon thread, since the spinning loop ignores interruption.
+        assertLayoutFinishes("<tabwidth garbage garbage>a");
+    }
+
+    @Test
+    @Disabled("BUG: a definition that expands to itself never grows the source "
+            + "line, so the expansion limit check never fires and parsing "
+            + "loops forever. <define loop \"<loop>\"><loop> freezes the caller.")
+    void selfReferencingDefinitionShouldNotHangLayout() throws InterruptedException {
+        assertLayoutFinishes("<define loop \"<loop>\"><loop>");
+    }
+
+    @Test
+    @Disabled("BUG: exceeding the expansion limit should show the overflow message "
+            + "as the paragraph text, but the failed paragraph never records its "
+            + "tab list, so renderText throws NullPointerException. A growing "
+            + "definition or an oversized <repeat> reaches this from markup.")
+    void exceedingExpansionLimitShouldNotThrow() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setExpansionLimit(100);
+        r.setMarkupText("<define grow \"x<grow>\"><grow>");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            assertDoesNotThrow(() -> r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100)));
+        }
+    }
+
+    private static void assertLayoutFinishes(String markup) throws InterruptedException {
+        // A daemon thread, since a spinning loop ignores interruption.
         Thread layout = new Thread(() -> {
             MarkupRenderer r = new MarkupRenderer();
-            r.setMarkupText("<tabwidth garbage garbage>a");
+            r.setMarkupText(markup);
             try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
                 r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
             }
