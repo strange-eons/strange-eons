@@ -2404,6 +2404,134 @@ class MarkupRendererTest {
         return params;
     }
 
+    // ---- Unicode escapes ---------------------------------------------
+
+    @Test
+    void unicodeEscapeInsertsCharacter() {
+        assertEquals("a@b", parsedText("a<u+0040>b"));
+        assertEquals("a@b", parsedText("a<U+0040>b"));
+    }
+
+    @Test
+    void unicodeEscapeAcceptsFewerThanFourDigits() {
+        assertEquals("A", parsedText("<u+41>"));
+    }
+
+    @Test
+    void angleBracketEscapesProduceLiteralBrackets() {
+        assertEquals("<", parsedText("<u+003C>"));
+        assertEquals(">", parsedText("<u+003e>"));
+    }
+
+    @Test
+    void angleBracketEscapesDoNotFormTags() {
+        assertEquals("<b>x", parsedText("<u+003C>b<u+003E>x"));
+        assertFalse(fontsRendered("<u+003C>b<u+003E>x").get(0).isBold());
+    }
+
+    @Test
+    void unicodeEscapeOutputIsStillReparsedForPunctuation() {
+        assertEquals("“x”", parsedText("<u+0022>x<u+0022>"));
+    }
+
+    @Test
+    void invalidUnicodeEscapesAreDropped() {
+        for (String tag : List.of("<u+>", "<u+zzzz>", "</u+0040>")) {
+            assertEquals("xy", parsedText("x" + tag + "y"), tag);
+        }
+    }
+
+    @Test
+    void codepointsOutsideBmpAreNotSupported() {
+        assertEquals("xy", parsedText("x<u+1F600>y"));
+    }
+
+    // ---- Removing tags -----------------------------------------------
+
+    @Test
+    void removedStyleTagIsTreatedAsUnknown() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeTag("b");
+        assertNull(r.getStyleForTag("b"));
+        assertFalse(fontsRendered(r, "<b>x</b>").get(0).isBold());
+    }
+
+    @Test
+    void removedParametricTagIsTreatedAsUnknown() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeTag("size");
+        assertNull(r.getParametricStyleForTag("size"));
+        assertEquals(9f, fontsRendered(r, "<size 20>x</size>").get(0).getSize2D(), 0.01f);
+    }
+
+    @Test
+    void removedReplacementTagIsTreatedAsUnknown() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeTag("emdash");
+        assertNull(r.getReplacementForTag("emdash"));
+        assertEquals("xy", parsedText(r, "x<emdash>y"));
+    }
+
+    @Test
+    void removingUnknownTagHasNoEffect() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeTag("no-such-tag");
+        assertNotNull(r.getStyleForTag("b"));
+    }
+
+    @Test
+    void removeTagReparsesCurrentMarkup() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertEquals("x—y", parsedText(r, "x<emdash>y"));
+        r.removeTag("emdash");
+        assertEquals("xy", parsedText(r, "x<emdash>y"));
+    }
+
+    @Test
+    void removeTagIsCaseSensitive() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeTag("B");
+        assertNotNull(r.getStyleForTag("b"));
+    }
+
+    @Test
+    void tagRegisteredWithUppercaseNameNeverMatches() {
+        // Markup lookups use the lowercased tag name.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setReplacementForTag("Name", "replacement");
+        assertEquals("xy", parsedText(r, "x<Name>y"));
+    }
+
+    @Test
+    void settingOneTagKindReplacesOtherKinds() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setReplacementForTag("b", "text");
+        assertNull(r.getStyleForTag("b"));
+        r.setParametricStyleForTag("b", FontSizeStyleFactory.getShared());
+        assertNull(r.getReplacementForTag("b"));
+        r.setStyleForTag("b", TextStyle.BOLD_STYLE);
+        assertNull(r.getParametricStyleForTag("b"));
+    }
+
+    @Test
+    void removeAllTagsClearsEveryKindOfTag() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeAllTags();
+        assertNull(r.getStyleForTag("b"));
+        assertNull(r.getParametricStyleForTag("size"));
+        assertNull(r.getReplacementForTag("emdash"));
+        assertEquals("xy", parsedText(r, "x<b><size 20><emdash>y"));
+    }
+
+    @Test
+    void removeAllTagsKeepsBuiltInParsing() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeAllTags();
+        assertEquals("a\nb<c@", parsedText(r, "a<br>b<lt>c<u+0040>"));
+        assertEquals("x", parsedText(r, "<define d x><d>"));
+        assertEquals("aa", parsedText(r, "<repeat 2 a>"));
+    }
+
     // ---- Test scaffolding --------------------------------------------
 
     /**
