@@ -188,6 +188,9 @@ jobs:
       # the ticket so Gatekeeper can validate offline. notarytool returns
       # exit 0 even on rejection in some xcrun builds, hence the explicit
       # "status: Accepted" grep + notarytool log on failure.
+      # Apple's services drop connections often enough that each call is
+      # retried. A submission counts as done once it reports a final status,
+      # so a rejection is not resubmitted.
       - name: Notarize and staple .dmg
         if: runner.os == 'macOS'
         env:
@@ -202,11 +205,26 @@ jobs:
             echo "::error::no .dmg produced under deployment/installers/"
             exit 1
           fi
-          for dmg in "${dmgs[@]}"; do
-            echo "::group::Notarize $dmg"
-            xcrun notarytool submit "$dmg" \
+          retry() {
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              "$@" && return 0
+              if (( attempt < 5 )); then
+                echo "::warning::$1 failed on attempt $attempt; retrying"
+                sleep $(( attempt * 30 ))
+              fi
+            done
+            return 1
+          }
+          submit() {
+            xcrun notarytool submit "$1" \
               --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" \
               --wait --timeout 1800 2>&1 | tee notarize_output.txt
+            grep -Eq '^ *status: ' notarize_output.txt
+          }
+          for dmg in "${dmgs[@]}"; do
+            echo "::group::Notarize $dmg"
+            retry submit "$dmg"
             if ! grep -q "status: Accepted" notarize_output.txt; then
               SUBMISSION_ID=$(grep -oE '[0-9a-f-]{36}' notarize_output.txt | head -1)
               if [[ -n "$SUBMISSION_ID" ]]; then
@@ -215,8 +233,8 @@ jobs:
               fi
               exit 1
             fi
-            xcrun stapler staple "$dmg"
-            xcrun stapler validate "$dmg"
+            retry xcrun stapler staple "$dmg"
+            retry xcrun stapler validate "$dmg"
             echo "::endgroup::"
           done
       - name: Tar Linux app-image into a portable tarball
