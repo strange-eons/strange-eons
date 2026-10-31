@@ -1750,6 +1750,215 @@ class MarkupRendererTest {
         }
     }
 
+    // ---- Headlines ---------------------------------------------------
+    //
+    // <h1>..<h7> split paragraphs in breakIntoParagraphs. A paragraph
+    // is a title line only if it holds a tag with a registered style,
+    // and only h1 has one by default.
+
+    @Test
+    void headlineStyleAppliesSize() {
+        Font f = fontsRendered("<h1>Head</h1>").get(0);
+        assertEquals(14f, f.getSize2D(), 0.01f);
+    }
+
+    @Test
+    void headlineTagIsCaseInsensitive() {
+        assertEquals(titleLines("<h1>Head</h1>\nBody"), titleLines("<H1>Head</H1>\nBody"));
+        assertTrue(titleLines("<H1>Head").get(0));
+    }
+
+    @Test
+    void textBeforeHeadlineBecomesItsOwnParagraph() {
+        assertEquals("before\nHead", parsedText("before<h1>Head"));
+    }
+
+    @Test
+    void newlineAfterHeadlineCloseIsSuppressed() {
+        assertEquals("Head\nBody", parsedText("<h1>Head</h1>\nBody"));
+    }
+
+    @Test
+    void onlyFirstNewlineAfterHeadlineCloseIsSuppressed() {
+        assertEquals("Head\n \nBody", parsedText("<h1>Head</h1>\n\nBody"));
+    }
+
+    @Test
+    void brAfterHeadlineCloseIsSuppressed() {
+        assertEquals("Head\nBody", parsedText("<h1>Head</h1><br>Body"));
+    }
+
+    @Test
+    void adjacentHeadlinesAreSeparateParagraphs() {
+        assertEquals("One\nTwo\n ", parsedText("<h1>One</h1><h1>Two</h1>"));
+    }
+
+    @Test
+    void textFollowingHeadlineCloseStaysInNextParagraph() {
+        assertEquals("Head\nBody\nmore", parsedText("<h1>Head</h1>Body\nmore"));
+    }
+
+    @Test
+    void headlinesWithoutDefaultStyleSplitButAreNotTitles() {
+        for (int n = 2; n <= 7; ++n) {
+            String markup = "before<h" + n + ">Head</h" + n + ">\nBody";
+            assertEquals("before\nHead\nBody", parsedText(markup), markup);
+            assertEquals(List.of(false, false, false), titleLines(markup), markup);
+        }
+    }
+
+    @Test
+    void addingStyleMakesAnyHeadlineLevelATitle() {
+        for (int n = 2; n <= 7; ++n) {
+            MarkupRenderer r = new MarkupRenderer();
+            r.setStyleForTag("h" + n, r.getStyleForTag("h1"));
+            assertTrue(titleLines(r, "<h" + n + ">Head").get(0), "h" + n);
+        }
+    }
+
+    @Test
+    void h0AndH8AreNotHeadlines() {
+        for (String tag : List.of("h0", "h8")) {
+            MarkupRenderer r = new MarkupRenderer();
+            r.setStyleForTag(tag, r.getStyleForTag("h1"));
+            String markup = "before<" + tag + ">Head";
+            assertEquals(List.of(false), titleLines(r, markup), tag);
+        }
+    }
+
+    @Test
+    void removingH1StyleKeepsSplitButNotTitle() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.removeTag("h1");
+        assertEquals(List.of(false, false), titleLines(r, "before<h1>Head"));
+    }
+
+    @Test
+    void closeTagAtEndOfMarkupLeavesTrailingEmptyParagraph() {
+        // The close tag is carried into a new paragraph, which then
+        // adds a padded blank line to the measured height.
+        assertEquals("Head\n ", parsedText("<h1>Head</h1>"));
+        MarkupRenderer r = new MarkupRenderer();
+        try (GraphicsHandle gh = new GraphicsHandle(400, 300)) {
+            Rectangle2D region = new Rectangle2D.Double(0, 0, 300, 200);
+            r.setMarkupText("<h1>Head");
+            double open = r.measure(gh.g, region);
+            r.setMarkupText("<h1>Head</h1>");
+            assertTrue(r.measure(gh.g, region) > open);
+        }
+    }
+
+    @Test
+    void paragraphAfterHeadlineIsNotATitle() {
+        assertEquals(List.of(true, false, false), titleLines("<h1>Head</h1>\nBody\nmore"));
+    }
+
+    @Test
+    void paragraphAfterHeadlineUsesBaseAlignment() {
+        List<LayoutSegment> segments = headlineLayout("<h1>Head</h1>\nBody",
+                MarkupRenderer.LAYOUT_RIGHT, LEFT_TOP);
+        assertTrue(paragraphX(segments, 0) > 0f);
+        assertEquals(0f, paragraphX(segments, 1), 0.01f);
+    }
+
+    @Test
+    void headlineAlignmentDefaultsToCenter() {
+        assertEquals(MarkupRenderer.LAYOUT_CENTER, new MarkupRenderer().getHeadlineAlignment());
+    }
+
+    @Test
+    void setHeadlineAlignmentKeepsOnlyHorizontalBits() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setHeadlineAlignment(MarkupRenderer.LAYOUT_RIGHT | MarkupRenderer.LAYOUT_BOTTOM
+                | MarkupRenderer.LAYOUT_JUSTIFY);
+        assertEquals(MarkupRenderer.LAYOUT_RIGHT, r.getHeadlineAlignment());
+    }
+
+    @Test
+    void setHeadlineAlignmentWithoutHorizontalBitsUsesLeft() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setHeadlineAlignment(MarkupRenderer.LAYOUT_BOTTOM);
+        assertEquals(MarkupRenderer.LAYOUT_LEFT, r.getHeadlineAlignment());
+    }
+
+    @Test
+    void headlineUsesHeadlineAlignmentNotBaseAlignment() {
+        float left = firstHeadlineX(MarkupRenderer.LAYOUT_LEFT,
+                MarkupRenderer.LAYOUT_RIGHT | MarkupRenderer.LAYOUT_TOP);
+        float center = firstHeadlineX(MarkupRenderer.LAYOUT_CENTER, LEFT_TOP);
+        float right = firstHeadlineX(MarkupRenderer.LAYOUT_RIGHT, LEFT_TOP);
+        assertEquals(0f, left, 0.01f);
+        assertTrue(center > 0f);
+        assertEquals(right / 2f, center, 0.01f);
+    }
+
+    @Test
+    void inlineAlignmentTagDoesNotOverrideHeadlineAlignment() {
+        List<LayoutSegment> segments = headlineLayout("<h1><right>Head",
+                MarkupRenderer.LAYOUT_LEFT, LEFT_TOP);
+        assertEquals(0f, segments.get(0).getXOffset(), 0.01f);
+    }
+
+    @Test
+    void changingHeadlineAlignmentAppliesToNextLayout() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<h1>Head");
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 100, 50);
+        List<LayoutSegment> before = new ArrayList<>();
+        List<LayoutSegment> after = new ArrayList<>();
+        try (GraphicsHandle gh = new GraphicsHandle(200, 150)) {
+            r.setHeadlineAlignment(MarkupRenderer.LAYOUT_LEFT);
+            r.appendSegments(gh.g, region, before);
+            r.setHeadlineAlignment(MarkupRenderer.LAYOUT_RIGHT);
+            r.appendSegments(gh.g, region, after);
+        }
+        assertTrue(after.get(0).getXOffset() > before.get(0).getXOffset());
+    }
+
+    @Test
+    void headlineAddsSpaceAboveAndBelowComparedToEquivalentStyle() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setStyleForTag("big", r.getStyleForTag("h1"));
+        List<LayoutSegment> plain = segmentsOf(r, "<big>Head</big>\nBody\nmore");
+        List<LayoutSegment> title = segmentsOf(r, "<h1>Head</h1>\nBody\nmore");
+        assertTrue(title.get(0).getYOffset() > plain.get(0).getYOffset());
+        assertTrue(title.get(1).getYOffset() - title.get(0).getYOffset()
+                > plain.get(1).getYOffset() - plain.get(0).getYOffset());
+    }
+
+    private static List<Boolean> titleLines(String markup) {
+        return titleLines(new MarkupRenderer(), markup);
+    }
+
+    private static List<Boolean> titleLines(MarkupRenderer r, String markup) {
+        segmentsOf(r, markup);
+        List<Boolean> titles = new ArrayList<>();
+        for (MarkupRenderer.StyledParagraph p : r.getStyledText()) {
+            titles.add(p.isTitleLine());
+        }
+        return titles;
+    }
+
+    private static List<LayoutSegment> segmentsOf(MarkupRenderer r, String markup) {
+        r.setMarkupText(markup);
+        List<LayoutSegment> segments = new ArrayList<>();
+        try (GraphicsHandle gh = new GraphicsHandle(400, 300)) {
+            r.appendSegments(gh.g, new Rectangle2D.Double(0, 0, 300, 200), segments);
+        }
+        return segments;
+    }
+
+    private static List<LayoutSegment> headlineLayout(String markup, int headlineAlign, int align) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setHeadlineAlignment(headlineAlign);
+        r.setAlignment(align);
+        return segmentsOf(r, markup);
+    }
+
+    private static float firstHeadlineX(int headlineAlign, int align) {
+        return headlineLayout("<h1>Head", headlineAlign, align).get(0).getXOffset();
+    }
+
     // ---- Test scaffolding --------------------------------------------
 
     /**
