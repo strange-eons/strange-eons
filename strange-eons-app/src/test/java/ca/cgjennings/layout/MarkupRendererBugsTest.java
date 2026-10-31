@@ -336,6 +336,94 @@ class MarkupRendererBugsTest {
         }
     }
 
+    @Test
+    @Disabled("BUG: drawAsSingleLine replaces the scale without clearing the "
+            + "layout cache, so a later measure or draw of the same rectangle "
+            + "reuses the single-line scale. Measured 0.70 instead of 36.97.")
+    void drawAsSingleLineShouldNotAffectLaterLayout() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setMarkupText("Line ".repeat(60));
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 100, 40);
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            double before = r.measure(gh.g, region);
+            r.drawAsSingleLine(gh.g, region);
+            assertEquals(before, r.measure(gh.g, region), 0.01d);
+        }
+    }
+
+    @Test
+    @Disabled("BUG: layout caches the caller's rectangle by reference, so "
+            + "resizing that object compares equal and keeps the old scale. "
+            + "Measured 12.40 at the stale scale 0.599 instead of 30.67 at 1.0.")
+    void resizingSameRectangleObjectShouldRepeatFitting() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setMarkupText("Line ".repeat(60));
+        Rectangle2D.Double region = new Rectangle2D.Double(0, 0, 100, 40);
+        try (GraphicsHandle gh = new GraphicsHandle(600, 400)) {
+            r.measure(gh.g, region);
+            region.setRect(0, 0, 500, 300);
+            double reused = r.measure(gh.g, region);
+
+            MarkupRenderer fresh = new MarkupRenderer();
+            fresh.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
+            fresh.setMarkupText("Line ".repeat(60));
+            assertEquals(fresh.measure(gh.g, new Rectangle2D.Double(0, 0, 500, 300)), reused, 0.01d);
+        }
+    }
+
+    @Test
+    @Disabled("BUG: draw is documented to return where the next line would "
+            + "start, but with FIT_SCALE_TEXT and text without whitespace it "
+            + "returns lastLaidOutYOffset: 0 instead of about 10.35.")
+    void drawOfSingleWordShouldReturnNextLinePosition() {
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 100, 100);
+        MarkupRenderer scaled = new MarkupRenderer();
+        scaled.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
+        scaled.setMarkupText("Word");
+        MarkupRenderer plain = new MarkupRenderer();
+        plain.setMarkupText("Word");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            assertEquals(plain.draw(gh.g, region), scaled.draw(gh.g, region), 0.01d);
+        }
+    }
+
+    @Test
+    @Disabled("BUG: without fractional metrics, advances round to whole units "
+            + "at small scaled sizes and the single-pass scale can overshoot: "
+            + "this text returns 219 in a 200-wide region.")
+    void drawAsSingleLineShouldNotOverflowRegion() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Hello, world. ".repeat(10));
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            double width = r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, 200, 30));
+            assertTrue(width <= 200d, "width " + width);
+        }
+    }
+
+    @Test
+    @Disabled("BUG: after the tightness search, layout keeps the height it "
+            + "measured at the tightness limit. The first measure understates "
+            + "the height, and middle and bottom alignment use the wrong value.")
+    void firstMeasureShouldMatchTightenedLayout() {
+        MarkupRenderer unfitted = new MarkupRenderer();
+        unfitted.setMarkupText("Line ".repeat(60));
+        MarkupRenderer tightest = new MarkupRenderer();
+        tightest.setLineTightness(0.5f);
+        tightest.setMarkupText("Line ".repeat(60));
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTextFitting(MarkupRenderer.FIT_TIGHTEN_LINE_SPACING);
+        r.setMarkupText("Line ".repeat(60));
+        try (GraphicsHandle gh = new GraphicsHandle(400, 500)) {
+            Rectangle2D wide = new Rectangle2D.Double(0, 0, 300, 400);
+            double h = (unfitted.measure(gh.g, wide) + tightest.measure(gh.g, wide)) / 2d;
+            Rectangle2D region = new Rectangle2D.Double(0, 0, 300, h);
+            double first = r.measure(gh.g, region);
+            assertEquals(r.measure(gh.g, region), first, 0.01d);
+        }
+    }
+
     private static void assertLayoutFinishes(String markup) throws InterruptedException {
         // A daemon thread, since a spinning loop ignores interruption.
         Thread layout = new Thread(() -> {

@@ -4,6 +4,10 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.Paint;
+import java.awt.RenderingHints;
+import java.awt.Shape;
+import java.awt.font.TextAttribute;
+import java.awt.font.TransformAttribute;
 import java.awt.font.GlyphVector;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
@@ -2530,6 +2534,344 @@ class MarkupRendererTest {
         assertEquals("a\nb<c@", parsedText(r, "a<br>b<lt>c<u+0040>"));
         assertEquals("x", parsedText(r, "<define d x><d>"));
         assertEquals("aa", parsedText(r, "<repeat 2 a>"));
+    }
+
+    // ---- Fitting limits ----------------------------------------------
+
+    private static final String OVERFLOWING = repeat("Line ", 60);
+    private static final Rectangle2D SMALL_REGION = new Rectangle2D.Double(0, 0, 100, 40);
+
+    @Test
+    void fittingLimitDefaults() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertEquals(0.5d, r.getScalingLimit());
+        assertEquals(1_000, r.getScalingFractionalLimit());
+        assertEquals(0.5f, r.getTightnessLimit());
+    }
+
+    @Test
+    void setScalingLimitRejectsValuesOutsideUnitRange() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertThrows(IllegalArgumentException.class, () -> r.setScalingLimit(0d));
+        assertThrows(IllegalArgumentException.class, () -> r.setScalingLimit(-0.5d));
+        assertThrows(IllegalArgumentException.class, () -> r.setScalingLimit(1.1d));
+        r.setScalingLimit(1d);
+        assertEquals(1d, r.getScalingLimit());
+    }
+
+    @Test
+    void setScalingFractionalLimitRejectsNonPositiveValues() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertThrows(IllegalArgumentException.class, () -> r.setScalingFractionalLimit(0));
+        r.setScalingFractionalLimit(10);
+        assertEquals(10, r.getScalingFractionalLimit());
+    }
+
+    @Test
+    void tightnessLimitAboveLineTightnessRaisesLineTightness() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTightnessLimit(2f);
+        assertEquals(2f, r.getTightnessLimit());
+        assertEquals(2f, r.getLineTightness());
+    }
+
+    @Test
+    void lineTightnessBelowLimitLowersLimit() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setLineTightness(0.25f);
+        assertEquals(0.25f, r.getLineTightness());
+        assertEquals(0.25f, r.getTightnessLimit());
+    }
+
+    @Test
+    void scaleFitsOverflowingTextAboveLimit() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        double height = measure(r, SMALL_REGION);
+        double scale = appliedScale(r);
+        assertTrue(height <= SMALL_REGION.getHeight(), "height " + height);
+        assertTrue(scale > 0.5d && scale < 1d, "scale " + scale);
+    }
+
+    @Test
+    void textThatFitsIsNotScaled() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_BOTH);
+        r.setMarkupText("Line");
+        measure(r, SMALL_REGION);
+        assertEquals(1d, appliedScale(r));
+    }
+
+    @Test
+    void scalingLimitStopsScaleEvenIfTextOverflows() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setScalingLimit(0.8d);
+        double height = measure(r, SMALL_REGION);
+        assertEquals(0.8d, appliedScale(r), 1e-9);
+        assertTrue(height > SMALL_REGION.getHeight());
+    }
+
+    @Test
+    void scalingLimitOfOneDisablesScaling() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setScalingLimit(1d);
+        measure(r, SMALL_REGION);
+        assertEquals(1d, appliedScale(r));
+    }
+
+    @Test
+    void scaleIsRoundedToFractionalLimit() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setScalingFractionalLimit(10);
+        measure(r, SMALL_REGION);
+        double tenths = appliedScale(r) * 10d;
+        assertEquals(Math.rint(tenths), tenths, 1e-9);
+    }
+
+    @Test
+    void coarseFractionalLimitSelectsOnlyAvailableScale() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setScalingFractionalLimit(2);
+        measure(r, SMALL_REGION);
+        assertEquals(0.5d, appliedScale(r));
+    }
+
+    @Test
+    void fractionalLimitOfOneLeavesTextUnscaled() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setScalingFractionalLimit(1);
+        measure(r, SMALL_REGION);
+        assertEquals(1d, appliedScale(r));
+    }
+
+    @Test
+    void changingScalingLimitAppliesToNextLayout() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setScalingLimit(0.8d);
+        measure(r, SMALL_REGION);
+        r.setScalingLimit(0.9d);
+        measure(r, SMALL_REGION);
+        assertEquals(0.9d, appliedScale(r), 1e-9);
+    }
+
+    @Test
+    void tighteningStopsAtTightnessLimit() {
+        MarkupRenderer limit = fitted(MarkupRenderer.FIT_NONE);
+        limit.setLineTightness(0.5f);
+        double atLimit = measure(limit, SMALL_REGION);
+
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_TIGHTEN_LINE_SPACING);
+        assertEquals(atLimit, measure(r, SMALL_REGION), 0.01d);
+    }
+
+    @Test
+    void lowerTightnessLimitPacksLinesCloser() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_TIGHTEN_LINE_SPACING);
+        double defaultLimit = measure(r, SMALL_REGION);
+        r.setTightnessLimit(0f);
+        assertTrue(measure(r, SMALL_REGION) < defaultLimit);
+    }
+
+    @Test
+    void tighteningUsesOnlyAsMuchAsNeeded() {
+        Rectangle2D wide = new Rectangle2D.Double(0, 0, 300, 400);
+        MarkupRenderer limit = fitted(MarkupRenderer.FIT_NONE);
+        limit.setLineTightness(0.5f);
+        double tightest = measure(limit, wide);
+        MarkupRenderer normal = fitted(MarkupRenderer.FIT_NONE);
+        double loosest = measure(normal, wide);
+
+        double h = (tightest + loosest) / 2d;
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_TIGHTEN_LINE_SPACING);
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 300, h);
+        // The first measure reports the height at the tightness limit.
+        measure(r, region);
+        double height = measure(r, region);
+        assertTrue(height <= h, "height " + height + " limit " + h);
+        assertTrue(height > tightest, "height " + height + " tightest " + tightest);
+    }
+
+    @Test
+    void fitBothPrefersTighteningOverScaling() {
+        Rectangle2D wide = new Rectangle2D.Double(0, 0, 300, 400);
+        double loosest = measure(fitted(MarkupRenderer.FIT_NONE), wide);
+        MarkupRenderer limit = fitted(MarkupRenderer.FIT_NONE);
+        limit.setLineTightness(0.5f);
+        double tightest = measure(limit, wide);
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_BOTH);
+        measure(r, new Rectangle2D.Double(0, 0, 300, (tightest + loosest) / 2d));
+        assertEquals(1d, appliedScale(r));
+    }
+
+    @Test
+    void fitBothScalesLessThanScalingAlone() {
+        MarkupRenderer both = fitted(MarkupRenderer.FIT_BOTH);
+        MarkupRenderer scaleOnly = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        measure(both, SMALL_REGION);
+        measure(scaleOnly, SMALL_REGION);
+        assertTrue(appliedScale(both) > appliedScale(scaleOnly));
+    }
+
+    @Test
+    void drawAsSingleLineFillsRegionWithFractionalMetrics() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(repeat("Hello, world. ", 10));
+        for (double w : List.of(50d, 100d, 200d, 300d)) {
+            try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+                gh.g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
+                        RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+                assertEquals(w, r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, w, 30)), 0.5d);
+            }
+        }
+    }
+
+    @Test
+    void drawAsSingleLineMissesRegionWithoutFractionalMetrics() {
+        // Advances round to whole units at small scaled sizes, and the
+        // scale is computed from one measurement without a second pass.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(repeat("Hello, world. ", 10));
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            assertTrue(r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, 100, 30)) < 90d);
+        }
+    }
+
+    @Test
+    void drawAsSingleLineLeavesFittingTextUnscaled() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Word");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            double width = r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, 300, 30));
+            assertTrue(width < 300d);
+        }
+        assertEquals(1d, appliedScale(r));
+    }
+
+    @Test
+    void drawAsSingleLineIgnoresScalingLimit() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setScalingLimit(0.5d);
+        r.setMarkupText(repeat("Hello, world. ", 10));
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, 50, 30));
+        }
+        assertTrue(appliedScale(r) < 0.5d);
+    }
+
+    // ---- Bad-box marking ---------------------------------------------
+
+    @Test
+    void markBadBoxRoundTrips() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertFalse(r.getMarkBadBox());
+        r.setMarkBadBox(true);
+        assertTrue(r.getMarkBadBox());
+    }
+
+    @Test
+    void overflowingTextIsMarkedWhenEnabled() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_NONE);
+        r.setMarkBadBox(true);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            Paint original = spy.getPaint();
+            r.draw(spy, SMALL_REGION);
+            verify(spy).setPaint(Color.RED);
+            verify(spy).draw(any(Shape.class));
+            assertEquals(original, spy.getPaint());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void overflowingTextIsNotMarkedByDefault() {
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            fitted(MarkupRenderer.FIT_NONE).draw(spy, SMALL_REGION);
+            verify(spy, never()).draw(any(Shape.class));
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void textThatFitsIsNotMarked() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkBadBox(true);
+        r.setMarkupText("Line");
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, SMALL_REGION);
+            verify(spy, never()).draw(any(Shape.class));
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void badBoxOutlinesPageShape() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_NONE);
+        r.setMarkBadBox(true);
+        r.setPageShape(new PageShape.InsetShape(5, 5));
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.draw(spy, SMALL_REGION);
+            verify(spy).setPaint(Color.BLUE);
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void drawAsSingleLineDoesNotMarkOrChangeSetting() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_NONE);
+        r.setMarkBadBox(true);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.drawAsSingleLine(spy, new Rectangle2D.Double(0, 0, 100, 1));
+            verify(spy, never()).draw(any(Shape.class));
+            assertTrue(r.getMarkBadBox());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void debugFlagOutlinesRegion() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("Line");
+        Graphics2D spy = spyGraphics(400, 200);
+        MarkupRenderer.DEBUG = true;
+        try {
+            r.draw(spy, SMALL_REGION);
+            r.drawAsSingleLine(spy, SMALL_REGION);
+            verify(spy, atLeast(2)).setPaint(Color.MAGENTA);
+        } finally {
+            MarkupRenderer.DEBUG = false;
+            spy.dispose();
+        }
+    }
+
+    private static MarkupRenderer fitted(int fitMode) {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTextFitting(fitMode);
+        r.setMarkupText(OVERFLOWING);
+        return r;
+    }
+
+    private static double measure(MarkupRenderer r, Rectangle2D region) {
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            return r.measure(gh.g, region);
+        }
+    }
+
+    /**
+     * Scale factor from the most recent layout, at the 72 dpi used by
+     * the no-arg constructor.
+     */
+    private static double appliedScale(MarkupRenderer r) {
+        TransformAttribute scale = (TransformAttribute) r.getStyledText()[0]
+                .getIterator().getAttribute(TextAttribute.TRANSFORM);
+        return scale.getTransform().getScaleX();
     }
 
     // ---- Test scaffolding --------------------------------------------
