@@ -476,6 +476,12 @@ public final class StrangeEons {
                 System.exit(11);
             }
 
+            // keep script runs out of the macOS Dock and app switcher; must be set
+            // before AWT initializes
+            if (commandLineArguments.run != null) {
+                System.setProperty("apple.awt.UIElement", "true");
+            }
+
             if (commandLineArguments.xDisablePluginLoading) {
                 BundleInstaller.disablePluginLoading();
                 log.info("disabled plug-in loading");

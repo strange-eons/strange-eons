@@ -270,7 +270,9 @@ final class AppFrame extends StrangeEonsAppWindow {
         // a while and we don't want a big blank window while it runs
         final Timer delayedStartupActions = new Timer(1_000, (ActionEvent ae) -> {
             try {
-                toFront();
+                if (!StrangeEons.isNonInteractive()) {
+                    toFront();
+                }
                 checkIfInstallationWasUpdated();
                 // load initial editors from command line
                 openFilesInQueue();

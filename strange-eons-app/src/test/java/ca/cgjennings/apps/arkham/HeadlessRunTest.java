@@ -3,7 +3,9 @@ package ca.cgjennings.apps.arkham;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
+import java.awt.GraphicsEnvironment;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -30,12 +32,16 @@ class HeadlessRunTest {
     }
 
     private Result launch(String... appArgs) throws IOException, InterruptedException {
+        return launch(true, appArgs);
+    }
+
+    private Result launch(boolean headless, String... appArgs) throws IOException, InterruptedException {
         Path user = temp.resolve("user");
         Files.createDirectories(user);
         Files.writeString(user.resolve("preferences"), "");
         List<String> cmd = new ArrayList<>(List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Djava.awt.headless=true",
+                "-Djava.awt.headless=" + headless,
                 "--add-opens=java.desktop/javax.swing.table=ALL-UNNAMED",
                 "--enable-native-access=ALL-UNNAMED",
                 "-cp", System.getProperty("java.class.path"),
@@ -60,6 +66,26 @@ class HeadlessRunTest {
         Path script = temp.resolve("script.js");
         Files.writeString(script, source);
         return launch("--run", script.toString());
+    }
+
+    @Test
+    void scriptRunWithDisplayStaysHidden() throws Exception {
+        assumeFalse(GraphicsEnvironment.isHeadless());
+        Path script = temp.resolve("script.js");
+        Files.writeString(script, """
+                var windows = java.awt.Window.getWindows();
+                var visible = 0;
+                for (var i = 0; i < windows.length; ++i) {
+                    if (windows[i].isVisible()) ++visible;
+                }
+                println('windows=' + windows.length + ' visible=' + visible);
+                println('uiElement=' + java.lang.System.getProperty('apple.awt.UIElement'));
+                """);
+        Result r = launch(false, "--run", script.toString());
+        assertEquals(0, r.status(), r.output());
+        assertTrue(r.output().contains("visible=0"), r.output());
+        assertFalse(r.output().contains("windows=0"), r.output());
+        assertTrue(r.output().contains("uiElement=true"), r.output());
     }
 
     @Test
