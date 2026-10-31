@@ -140,22 +140,6 @@ class MarkupRendererBugsTest {
     }
 
     @Test
-    @Disabled("BUG: draw is documented to return where the next line would "
-            + "start, but with FIT_SCALE_TEXT and text without whitespace it "
-            + "returns lastLaidOutYOffset: 0 instead of about 10.35.")
-    void drawOfSingleWordShouldReturnNextLinePosition() {
-        Rectangle2D region = new Rectangle2D.Double(0, 0, 100, 100);
-        MarkupRenderer scaled = new MarkupRenderer();
-        scaled.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
-        scaled.setMarkupText("Word");
-        MarkupRenderer plain = new MarkupRenderer();
-        plain.setMarkupText("Word");
-        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            assertEquals(plain.draw(gh.g, region), scaled.draw(gh.g, region), 0.01d);
-        }
-    }
-
-    @Test
     void firstMeasureShouldMatchTightenedLayout() {
         MarkupRenderer unfitted = new MarkupRenderer();
         unfitted.setMarkupText("Line ".repeat(60));

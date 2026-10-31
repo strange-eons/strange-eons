@@ -774,7 +774,7 @@ public class MarkupRenderer {
         createStyledText();
         if (!textHasWhitespace && (getTextFitting() & FIT_SCALE_TEXT) != 0) {
             drawAsSingleLine(g, r);
-            return lastLaidOutYOffset;
+            return lastSingleLineNextY;
         }
         return layout(g, r, true);
     }
@@ -820,6 +820,8 @@ public class MarkupRenderer {
         boolean oldMarkBad = markBadBoxes;
         markBadBoxes = false;
         renderText(g, r, yOffset, frc, false, true);
+        // a single line has no leading, so the next line starts at its bottom
+        lastSingleLineNextY = r.getY() + yOffset + textHeight;
         markBadBoxes = oldMarkBad;
 
         // the scale and tightness set here do not apply to a regular layout
@@ -863,6 +865,7 @@ public class MarkupRenderer {
      */
     private Rectangle2D lastLaidOutRectangle = null;
     private double lastLaidOutYOffset;
+    private double lastSingleLineNextY;
     private FontRenderContext lastLaidOutFontRenderContext = null;
     private FontRenderContext scaledFontRenderContext;
 
@@ -1172,7 +1175,7 @@ public class MarkupRenderer {
 
                     if (layout != null) {
                         // if we are supposed to justify the text...
-                        if ((!measureOnly || segmentAppendList != null) && (currentJustification & LAYOUT_JUSTIFY) != 0) {
+                        if ((!measureOnly || segmentAppendList != null) && (paragraph.getAlignment() & LAYOUT_JUSTIFY) != 0) {
                             // and this is not the last line in the paragraph...
                             if (!atEndOfParagraph && !atATab) {
                                 // then perform justification on this line

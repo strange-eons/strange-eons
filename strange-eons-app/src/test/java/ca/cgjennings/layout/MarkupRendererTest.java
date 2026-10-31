@@ -1164,17 +1164,71 @@ class MarkupRendererTest {
     }
 
     @Test
-    void justificationUsesFinalParserStateForEveryParagraph() {
-        // Each paragraph records its alignment, but layout tests the
-        // justify bit of the parser's state after the last paragraph,
-        // so a later <justified> justifies earlier paragraphs too.
-        double ragged = lineWidths(WRAPPING_TEXT + "\nx", LEFT_TOP, 0).get(0);
-        assertTrue(ragged < 99, "control: expected ragged first line; got " + ragged);
+    void laterJustifiedTagDoesNotJustifyEarlierParagraph() {
+        String markup = WRAPPING_TEXT + "\n<justified>" + WRAPPING_TEXT;
+        assertThat(lineWidths(markup, LEFT_TOP, 0).get(0)).isLessThan(99d);
+        assertThat(lineWidths(markup, LEFT_TOP, 1).get(0)).isCloseTo(100d, within(1d));
+    }
 
-        String markup = WRAPPING_TEXT + "\n<justified>x";
-        List<Double> firstParagraph = lineWidths(markup, LEFT_TOP, 0);
-        assertEquals(100, firstParagraph.get(0), 1.0,
-                "expected first paragraph justified by later tag; got " + firstParagraph);
+    @Test
+    void laterRaggedTagDoesNotUnjustifyEarlierParagraph() {
+        String markup = "<justified>" + WRAPPING_TEXT + "\n<ragged>" + WRAPPING_TEXT;
+        assertThat(lineWidths(markup, LEFT_TOP, 0).get(0)).isCloseTo(100d, within(1d));
+        assertThat(lineWidths(markup, LEFT_TOP, 1).get(0)).isLessThan(99d);
+    }
+
+    @Test
+    void justificationPersistsIntoLaterParagraphs() {
+        String markup = "<justified>" + WRAPPING_TEXT + "\n" + WRAPPING_TEXT;
+        assertThat(lineWidths(markup, LEFT_TOP, 1).get(0)).isCloseTo(100d, within(1d));
+    }
+
+    @Test
+    void justifiedTagMidParagraphAppliesToWholeParagraph() {
+        String markup = WRAPPING_TEXT + "<justified>";
+        assertThat(lineWidths(markup, LEFT_TOP, 0).get(0)).isCloseTo(100d, within(1d));
+    }
+
+    @Test
+    void justifyFlagAppliesToEveryParagraph() {
+        int justified = LEFT_TOP | MarkupRenderer.LAYOUT_JUSTIFY;
+        String markup = WRAPPING_TEXT + "\n" + WRAPPING_TEXT;
+        assertThat(lineWidths(markup, justified, 0).get(0)).isCloseTo(100d, within(1d));
+        assertThat(lineWidths(markup, justified, 1).get(0)).isCloseTo(100d, within(1d));
+    }
+
+    @Test
+    void singleWordDrawReturnsPositionBelowItsText() {
+        Rectangle2D region = new Rectangle2D.Double(0, 10, 100, 100);
+        MarkupRenderer plain = new MarkupRenderer();
+        plain.setMarkupText("Word");
+        double plainNext;
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            plainNext = plain.draw(gh.g, region);
+        }
+        MarkupRenderer scaled = new MarkupRenderer();
+        scaled.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
+        scaled.setMarkupText("Word");
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            double next = scaled.draw(spy, region);
+            ArgumentCaptor<Float> y = ArgumentCaptor.forClass(Float.class);
+            verify(spy, atLeast(1)).drawGlyphVector(any(GlyphVector.class), anyFloat(), y.capture());
+            assertThat(next).isGreaterThan(y.getValue()).isLessThanOrEqualTo(plainNext);
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void bottomAlignedSingleWordDrawReturnsRegionBottom() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setAlignment(MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM);
+        r.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
+        r.setMarkupText("Word");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            assertThat(r.draw(gh.g, new Rectangle2D.Double(0, 10, 100, 100))).isCloseTo(110d, within(0.01d));
+        }
     }
 
     private static float singleLineY(String markup, double w, double h) {
