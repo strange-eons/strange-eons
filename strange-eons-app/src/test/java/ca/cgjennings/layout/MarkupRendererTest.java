@@ -2264,6 +2264,14 @@ class MarkupRendererTest {
     }
 
     @Test
+    void userStyleCannotOverrideDefineTag() {
+        // The define handler runs before the style table is consulted.
+        MarkupRenderer r = new MarkupRenderer();
+        r.setStyleForTag("define", TextStyle.BOLD_STYLE);
+        assertFalse(fontsRendered(r, "<define>x</define>").get(0).isBold());
+    }
+
+    @Test
     void repeatKeySubstitutesItsValue() {
         MarkupRenderer r = new MarkupRenderer();
         assertEquals("7-a", r.replaceMacroParameters("@i;-@1;", new String[]{"a"}, "i", "7"));
