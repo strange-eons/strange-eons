@@ -4,6 +4,7 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Paint;
+import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.font.FontRenderContext;
 import java.awt.font.LineBreakMeasurer;
@@ -778,6 +779,8 @@ public class MarkupRenderer {
         return layout(g, r, true);
     }
 
+    private static final int MAX_SINGLE_LINE_SCALING_PASSES = 4;
+
     public double drawAsSingleLine(Graphics2D g, Rectangle2D r) {
         if (DEBUG) {
             drawBadBox(g, r.getX(), r.getY(), r.getWidth(), r.getHeight(), true);
@@ -787,11 +790,21 @@ public class MarkupRenderer {
         createStyledText();
         scaleText(1d);
         tightness = 0f;
-        double textHeight = renderText(g, r, 0d, lastLaidOutFontRenderContext, true, true);
+        FontRenderContext frc = lastLaidOutFontRenderContext;
+        double textHeight = renderText(g, r, 0d, frc, true, true);
 
         if (lastLineTextWidth > r.getWidth()) {
-            scaleText(r.getWidth() / lastLineTextWidth);
-            textHeight = renderText(g, r, 0d, lastLaidOutFontRenderContext, true, true);
+            // without fractional metrics, advances round to whole units at
+            // small sizes and the width does not follow the scale
+            frc = new FontRenderContext(frc.getTransform(), frc.getAntiAliasingHint(), RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+            textHeight = renderText(g, r, 0d, frc, true, true);
+
+            double scale = 1d;
+            for (int pass = 0; pass < MAX_SINGLE_LINE_SCALING_PASSES && lastLineTextWidth > r.getWidth(); ++pass) {
+                scale *= r.getWidth() / lastLineTextWidth;
+                scaleText(scale);
+                textHeight = renderText(g, r, 0d, frc, true, true);
+            }
         }
 
         double yOffset = 0f;
@@ -806,7 +819,7 @@ public class MarkupRenderer {
 
         boolean oldMarkBad = markBadBoxes;
         markBadBoxes = false;
-        renderText(g, r, yOffset, lastLaidOutFontRenderContext, false, true);
+        renderText(g, r, yOffset, frc, false, true);
         markBadBoxes = oldMarkBad;
 
         // the scale and tightness set here do not apply to a regular layout

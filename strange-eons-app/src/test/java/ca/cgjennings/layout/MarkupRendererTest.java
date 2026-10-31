@@ -2905,6 +2905,35 @@ class MarkupRendererTest {
     }
 
     @Test
+    void drawAsSingleLineFillsRegionWithoutFractionalMetrics() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(repeat("Hello, world. ", 10));
+        for (double w : List.of(50d, 100d, 200d, 300d)) {
+            try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+                assertThat(r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, w, 30)))
+                        .as("width in %s-wide region", w)
+                        .isLessThanOrEqualTo(w)
+                        .isCloseTo(w, withinPercentage(2));
+            }
+        }
+    }
+
+    @Test
+    void drawAsSingleLineDrawsAtFittedWidth() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText(repeat("Hello, world. ", 10));
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            r.drawAsSingleLine(spy, new Rectangle2D.Double(0, 0, 100, 30));
+            ArgumentCaptor<GlyphVector> gv = ArgumentCaptor.forClass(GlyphVector.class);
+            verify(spy, atLeast(1)).drawGlyphVector(gv.capture(), anyFloat(), anyFloat());
+            assertThat(gv.getValue().getVisualBounds().getWidth()).isLessThanOrEqualTo(100d);
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
     void drawAsSingleLineLeavesFittingTextUnscaled() {
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("Word");
