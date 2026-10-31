@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.assertj.core.api.Assertions.withinPercentage;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -2775,11 +2776,96 @@ class MarkupRendererTest {
         double h = (tightest + loosest) / 2d;
         MarkupRenderer r = fitted(MarkupRenderer.FIT_TIGHTEN_LINE_SPACING);
         Rectangle2D region = new Rectangle2D.Double(0, 0, 300, h);
-        // The first measure reports the height at the tightness limit.
-        measure(r, region);
         double height = measure(r, region);
         assertTrue(height <= h, "height " + height + " limit " + h);
         assertTrue(height > tightest, "height " + height + " tightest " + tightest);
+    }
+
+    @Test
+    void bottomAlignmentUsesHeightOfTightenedLayout() {
+        Rectangle2D wide = new Rectangle2D.Double(0, 0, 300, 400);
+        MarkupRenderer limit = fitted(MarkupRenderer.FIT_NONE);
+        limit.setLineTightness(0.5f);
+        double h = (measure(limit, wide) + measure(fitted(MarkupRenderer.FIT_NONE), wide)) / 2d;
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 300, h);
+
+        MarkupRenderer top = fitted(MarkupRenderer.FIT_TIGHTEN_LINE_SPACING);
+        MarkupRenderer bottom = fitted(MarkupRenderer.FIT_TIGHTEN_LINE_SPACING);
+        bottom.setAlignment(MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM);
+        double offset = firstDrawnY(bottom, region) - firstDrawnY(top, region);
+        assertThat(offset).isCloseTo(h - measure(top, region), within(0.01d));
+    }
+
+    private static float firstDrawnY(MarkupRenderer r, Rectangle2D region) {
+        Graphics2D spy = spyGraphics(400, 500);
+        try {
+            r.draw(spy, region);
+            ArgumentCaptor<Float> y = ArgumentCaptor.forClass(Float.class);
+            verify(spy, atLeast(1)).drawGlyphVector(any(GlyphVector.class), anyFloat(), y.capture());
+            return y.getAllValues().get(0);
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void repeatedMeasureDoesNotDrawAndReturnsSameHeight() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_BOTH);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            double first = r.measure(spy, SMALL_REGION);
+            assertThat(r.measure(spy, SMALL_REGION)).isEqualTo(first);
+            verify(spy, never()).drawGlyphVector(any(GlyphVector.class), anyFloat(), anyFloat());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    @Test
+    void drawAfterMeasureKeepsVerticalAlignment() {
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 300, 200);
+        int bottomLeft = MarkupRenderer.LAYOUT_LEFT | MarkupRenderer.LAYOUT_BOTTOM;
+        MarkupRenderer drawn = new MarkupRenderer();
+        drawn.setAlignment(bottomLeft);
+        drawn.setMarkupText("word");
+        MarkupRenderer measured = new MarkupRenderer();
+        measured.setAlignment(bottomLeft);
+        measured.setMarkupText("word");
+        measure(measured, region);
+        assertThat(firstDrawnY(measured, region)).isEqualTo(firstDrawnY(drawn, region));
+    }
+
+    @Test
+    void segmentsComeOnlyFromFinalFittedLayout() {
+        for (int fit : List.of(MarkupRenderer.FIT_SCALE_TEXT, MarkupRenderer.FIT_TIGHTEN_LINE_SPACING,
+                MarkupRenderer.FIT_BOTH)) {
+            MarkupRenderer r = fitted(fit);
+            List<LayoutSegment> segments = segmentsIn(r, SMALL_REGION);
+            assertThat(totalCharacters(segments)).as("fit mode %d", fit).isEqualTo(OVERFLOWING.length());
+        }
+    }
+
+    @Test
+    void repeatedAppendSegmentsDoesNotDrawAndAppendsAgain() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_BOTH);
+        List<LayoutSegment> first = segmentsIn(r, SMALL_REGION);
+        Graphics2D spy = spyGraphics(400, 200);
+        try {
+            List<LayoutSegment> second = new ArrayList<>();
+            r.appendSegments(spy, SMALL_REGION, second);
+            assertThat(second).hasSameSizeAs(first);
+            verify(spy, never()).drawGlyphVector(any(GlyphVector.class), anyFloat(), anyFloat());
+        } finally {
+            spy.dispose();
+        }
+    }
+
+    private static List<LayoutSegment> segmentsIn(MarkupRenderer r, Rectangle2D region) {
+        List<LayoutSegment> segments = new ArrayList<>();
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            r.appendSegments(gh.g, region, segments);
+        }
+        return segments;
     }
 
     @Test
@@ -2933,6 +3019,37 @@ class MarkupRendererTest {
             MarkupRenderer.DEBUG = false;
             spy.dispose();
         }
+    }
+
+    @Test
+    void layoutAfterSingleLineMatchesFirstLayout() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_BOTH);
+        double scale;
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            double height = r.measure(gh.g, SMALL_REGION);
+            scale = appliedScale(r);
+            r.drawAsSingleLine(gh.g, SMALL_REGION);
+            assertThat(r.measure(gh.g, SMALL_REGION)).isCloseTo(height, within(0.01d));
+        }
+        assertThat(appliedScale(r)).isEqualTo(scale);
+    }
+
+    @Test
+    void layoutDoesNotHoldCallersRectangle() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        Rectangle2D.Double region = new Rectangle2D.Double(0, 0, 100, 40);
+        measure(r, region);
+        double fitted = appliedScale(r);
+        region.setRect(0, 0, 1000, 1000);
+        measure(r, region);
+        assertThat(appliedScale(r)).isGreaterThan(fitted);
+    }
+
+    @Test
+    void unchangedRectangleReusesLayout() {
+        MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
+        double first = measure(r, SMALL_REGION);
+        assertThat(measure(r, new Rectangle2D.Double(0, 0, 100, 40))).isEqualTo(first);
     }
 
     private static MarkupRenderer fitted(int fitMode) {

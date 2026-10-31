@@ -809,6 +809,9 @@ public class MarkupRenderer {
         renderText(g, r, yOffset, lastLaidOutFontRenderContext, false, true);
         markBadBoxes = oldMarkBad;
 
+        // the scale and tightness set here do not apply to a regular layout
+        lastLaidOutRectangle = null;
+
         return lastLineTextWidth;
     }
 
@@ -863,8 +866,13 @@ public class MarkupRenderer {
         FontRenderContext frc = g.getFontRenderContext();
 
         if (lastLaidOutRectangle == null || !r.equals(lastLaidOutRectangle) || lastLaidOutFontRenderContext == null || !lastLaidOutFontRenderContext.equals(frc)) {
-            lastLaidOutRectangle = r;
+            // copied since the caller may reuse the object for a different size
+            lastLaidOutRectangle = (Rectangle2D) r.clone();
             lastLaidOutFontRenderContext = frc;
+
+            // only the final pass below contributes segments
+            List<LayoutSegment> appendList = segmentAppendList;
+            segmentAppendList = null;
 
             // TODO: need to reset the scale if the rectangle changes and we
             //       are asked to render the same markup, or if the markup
@@ -886,8 +894,10 @@ public class MarkupRenderer {
                     float newTightness = minTightness;
                     for (float t = 0.20f; t < 1f; t += 0.20f) {
                         tightness = minTightness + (maxTightness - minTightness) * t;
-                        if (renderText(g, r, 0f, scaledFontRenderContext, true, false) <= rectHeight) {
+                        double height = renderText(g, r, 0f, scaledFontRenderContext, true, false);
+                        if (height <= rectHeight) {
                             newTightness = tightness;
+                            textHeight = height;
                         } else {
                             break;
                         }
@@ -942,9 +952,7 @@ public class MarkupRenderer {
                 textHeight = renderText(g, r, 0f, scaledFontRenderContext, true, false);
             }
 
-            if (render == false) {
-                return textHeight;
-            }
+            segmentAppendList = appendList;
 
             // position pen for rendering according to the vertical draw setting
             double yOffset = 0f;
@@ -959,6 +967,9 @@ public class MarkupRenderer {
             lastLaidOutYOffset = yOffset;
         }
 
+        if (!render) {
+            return renderText(g, r, 0f, scaledFontRenderContext, true, false);
+        }
         return renderText(g, r, lastLaidOutYOffset, scaledFontRenderContext, false, false);
     }
 

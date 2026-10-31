@@ -113,9 +113,6 @@ class MarkupRendererBugsTest {
     }
 
     @Test
-    @Disabled("BUG: drawAsSingleLine replaces the scale without clearing the "
-            + "layout cache, so a later measure or draw of the same rectangle "
-            + "reuses the single-line scale. Measured 0.70 instead of 36.97.")
     void drawAsSingleLineShouldNotAffectLaterLayout() {
         MarkupRenderer r = new MarkupRenderer();
         r.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
@@ -129,9 +126,6 @@ class MarkupRendererBugsTest {
     }
 
     @Test
-    @Disabled("BUG: layout caches the caller's rectangle by reference, so "
-            + "resizing that object compares equal and keeps the old scale. "
-            + "Measured 12.40 at the stale scale 0.599 instead of 30.67 at 1.0.")
     void resizingSameRectangleObjectShouldRepeatFitting() {
         MarkupRenderer r = new MarkupRenderer();
         r.setTextFitting(MarkupRenderer.FIT_SCALE_TEXT);
@@ -166,9 +160,6 @@ class MarkupRendererBugsTest {
     }
 
     @Test
-    @Disabled("BUG: after the tightness search, layout keeps the height it "
-            + "measured at the tightness limit. The first measure understates "
-            + "the height, and middle and bottom alignment use the wrong value.")
     void firstMeasureShouldMatchTightenedLayout() {
         MarkupRenderer unfitted = new MarkupRenderer();
         unfitted.setMarkupText("Line ".repeat(60));
