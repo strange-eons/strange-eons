@@ -59,7 +59,10 @@ import java.util.logging.Logger;
  * replaced by arbitrary text strings.
  * <p>
  * User-defined tags are essentially the same as replacement tags, but they are
- * defined by the end user using the &lt;define&gt; built-in tag.
+ * defined by the end user using the &lt;define&gt; built-in tag. Its first
+ * parameter is the tag name and its second is the replacement; further
+ * parameters are ignored, so a replacement with spaces must be quoted, as in
+ * {@code <define greeting "Hello world">}.
  * <p>
  * Non-parametric style tags are tags that do not take parameters and apply a
  * {@link TextStyle} to the text they enclose. Examples include the &lt;b&gt;
@@ -832,7 +835,9 @@ public class MarkupRenderer {
 
     /**
      * Simulate rendering the current markup without drawing anything, returning
-     * the height that the text would have covered.
+     * the height that the text would have covered. Empty markup measures as one
+     * line of the default style, since layout always includes at least one line
+     * to establish a baseline.
      *
      * @return the layout height
      */

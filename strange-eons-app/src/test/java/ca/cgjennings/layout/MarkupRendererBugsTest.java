@@ -63,42 +63,6 @@ class MarkupRendererBugsTest {
     // ---- Incorrect results ------------------------------------------
 
     @Test
-    @Disabled("BUG: measure(\"\") returns ~9.97 (about one line of "
-            + "default font), not 0. The renderer emits one padding-"
-            + "character segment for baseline anchoring; that segment's "
-            + "height leaks into measure(). Callers asking 'how tall "
-            + "is this layout?' for empty content get a one-line "
-            + "answer. Fix: either return 0 for empty input, or "
-            + "document that measure() includes the minimum baseline "
-            + "padding and provide a separate height() for content-only.")
-    void measureEmptyMarkupShouldReturnZeroOrNegligibleHeight() {
-        MarkupRenderer r = new MarkupRenderer();
-        r.setMarkupText("");
-        try (GraphicsHandle gh = new GraphicsHandle(200, 200)) {
-            double h = r.measure(gh.g, new Rectangle2D.Double(0, 0, 100, 100));
-            assertTrue(h < 1.0,
-                    "expected empty markup to measure as ~0 height; got " + h);
-        }
-    }
-
-    @Test
-    @Disabled("BUG: <define name a b c> uses only the first content "
-            + "parameter ('a'); 'b c' are silently dropped. A user "
-            + "expecting <define greeting Hello world> to set greeting "
-            + "= 'Hello world' gets 'Hello' only. Fix: either join "
-            + "parameters with a space, or document that multi-word "
-            + "definitions need quoting.")
-    void defineWithExtraParametersShouldJoinOrError() {
-        int withGreeting = totalGlyphsRendered(
-                "<define greeting Hello world>The <greeting>.");
-        int withHelloOnly = totalGlyphsRendered("The Hello.");
-        assertTrue(withGreeting > withHelloOnly,
-                "<define name a b c> should expand to 'a b c' not just 'a'; "
-                        + "withGreeting=" + withGreeting
-                        + " withHelloOnly=" + withHelloOnly);
-    }
-
-    @Test
     void drawAsSingleLineShouldNotOverflowRegion() {
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText("Hello, world. ".repeat(10));

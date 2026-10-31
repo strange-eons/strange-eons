@@ -299,6 +299,18 @@ class MarkupRendererTest {
     // structural shape of the layout output.
 
     @Test
+    void emptyMarkupMeasuresAsOneLine() {
+        MarkupRenderer empty = new MarkupRenderer();
+        empty.setMarkupText("");
+        MarkupRenderer space = new MarkupRenderer();
+        space.setMarkupText(" ");
+        Rectangle2D region = new Rectangle2D.Double(0, 0, 100, 100);
+        try (GraphicsHandle gh = new GraphicsHandle(200, 200)) {
+            assertThat(empty.measure(gh.g, region)).isPositive().isEqualTo(space.measure(gh.g, region));
+        }
+    }
+
+    @Test
     void emptyMarkupProducesSingleMinimalSegment() {
         // Empty markup still produces one segment; the layout pass
         // always emits at least one segment (with the renderer's
@@ -2346,6 +2358,16 @@ class MarkupRendererTest {
         MarkupRenderer r = new MarkupRenderer();
         r.setStyleForTag("define", TextStyle.BOLD_STYLE);
         assertFalse(fontsRendered(r, "<define>x</define>").get(0).isBold());
+    }
+
+    @Test
+    void defineUsesOnlyFirstContentParameter() {
+        assertEquals("Hello", parsedText("<define greeting Hello world><greeting>"));
+    }
+
+    @Test
+    void quotedDefineKeepsMultipleWords() {
+        assertEquals("Hello world", parsedText("<define greeting \"Hello world\"><greeting>"));
     }
 
     @Test
