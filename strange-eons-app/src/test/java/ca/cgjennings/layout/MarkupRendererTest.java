@@ -18,6 +18,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -275,8 +277,7 @@ class MarkupRendererTest {
         Rectangle2D region = new Rectangle2D.Double(0, 0, 100, 30);
         try (GraphicsHandle gh = new GraphicsHandle(300, 100)) {
             double width = r.drawAsSingleLine(gh.g, region);
-            assertTrue(width > 0 && width <= region.getWidth(),
-                    "expected width in (0, " + region.getWidth() + "]; got " + width);
+            assertThat(width).isPositive().isLessThanOrEqualTo(region.getWidth());
         }
     }
 
@@ -2585,8 +2586,8 @@ class MarkupRendererTest {
         MarkupRenderer r = fitted(MarkupRenderer.FIT_SCALE_TEXT);
         double height = measure(r, SMALL_REGION);
         double scale = appliedScale(r);
-        assertTrue(height <= SMALL_REGION.getHeight(), "height " + height);
-        assertTrue(scale > 0.5d && scale < 1d, "scale " + scale);
+        assertThat(height).as("height").isLessThanOrEqualTo(SMALL_REGION.getHeight());
+        assertThat(scale).as("scale").isStrictlyBetween(0.5d, 1d);
     }
 
     @Test
@@ -2715,7 +2716,9 @@ class MarkupRendererTest {
             try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
                 gh.g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
                         RenderingHints.VALUE_FRACTIONALMETRICS_ON);
-                assertEquals(w, r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, w, 30)), 0.5d);
+                assertThat(r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, w, 30)))
+                        .as("width in %s-wide region", w)
+                        .isCloseTo(w, within(0.5d));
             }
         }
     }
@@ -2727,7 +2730,7 @@ class MarkupRendererTest {
         MarkupRenderer r = new MarkupRenderer();
         r.setMarkupText(repeat("Hello, world. ", 10));
         try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
-            assertTrue(r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, 100, 30)) < 90d);
+            assertThat(r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, 100, 30))).isLessThan(90d);
         }
     }
 
