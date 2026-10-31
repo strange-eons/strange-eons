@@ -9,7 +9,9 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -288,6 +290,39 @@ class MarkupRendererBugsTest {
         } finally {
             spyG.dispose();
         }
+    }
+
+    @Test
+    @Disabled("BUG: a zero tab width makes createTabStopArray return an empty "
+            + "array, so renderText throws ArrayIndexOutOfBoundsException at the "
+            + "first tab. Invalid <tabwidth> parameters are converted to zero, "
+            + "so <tabwidth garbage> reaches this from markup.")
+    void zeroTabWidthShouldNotThrowAtTab() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("<tabwidth garbage>a\tb");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            assertDoesNotThrow(() -> r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100)));
+        }
+    }
+
+    @Test
+    @Disabled("BUG: when multiple tab widths are all zero, the sizing loop in "
+            + "createTabStopArray never advances, so layout hangs forever, even "
+            + "without a tab in the text. <tabwidth garbage garbage> reaches "
+            + "this from markup.")
+    void allZeroTabWidthsShouldNotHangLayout() throws InterruptedException {
+        // A daemon thread, since the spinning loop ignores interruption.
+        Thread layout = new Thread(() -> {
+            MarkupRenderer r = new MarkupRenderer();
+            r.setMarkupText("<tabwidth garbage garbage>a");
+            try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+                r.draw(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+            }
+        });
+        layout.setDaemon(true);
+        layout.start();
+        layout.join(5000);
+        assertFalse(layout.isAlive(), "layout did not finish");
     }
 
     private static BufferedImage newImage(int w, int h) {

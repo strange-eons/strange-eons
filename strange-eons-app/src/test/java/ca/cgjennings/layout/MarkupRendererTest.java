@@ -14,11 +14,13 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
@@ -1957,6 +1959,215 @@ class MarkupRendererTest {
 
     private static float firstHeadlineX(int headlineAlign, int align) {
         return headlineLayout("<h1>Head", headlineAlign, align).get(0).getXOffset();
+    }
+
+    // ---- Tabs --------------------------------------------------------
+    //
+    // <tabwidth> calls setTabWidths while parsing, so it applies to the
+    // whole block and stays set on the renderer. The no-arg constructor
+    // uses 72 dpi, so a 1in stop is 72 units wide.
+
+    @Test
+    void tabWidthDefaultsToOneCentimeter() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertEquals(1d / 2.54d, r.getTabWidth(), 1e-9);
+        assertArrayEquals(new double[]{1d / 2.54d}, r.getTabWidths(), 1e-9);
+    }
+
+    @Test
+    void setTabWidthReplacesMultipleStops() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTabWidths(new double[]{1d, 2d});
+        r.setTabWidth(3d);
+        assertArrayEquals(new double[]{3d}, r.getTabWidths());
+    }
+
+    @Test
+    void setTabWidthsRejectsNullAndEmpty() {
+        MarkupRenderer r = new MarkupRenderer();
+        assertThrows(NullPointerException.class, () -> r.setTabWidths(null));
+        assertThrows(IllegalArgumentException.class, () -> r.setTabWidths(new double[0]));
+    }
+
+    @Test
+    void tabWidthArraysAreCopied() {
+        MarkupRenderer r = new MarkupRenderer();
+        double[] stops = {1d, 2d};
+        r.setTabWidths(stops);
+        stops[0] = 9d;
+        r.getTabWidths()[1] = 9d;
+        assertArrayEquals(new double[]{1d, 2d}, r.getTabWidths());
+    }
+
+    @Test
+    void tabsAdvanceToEvenlySpacedStops() {
+        assertEquals(List.of(0f, 72f, 144f), tabXs("<tabwidth 1in>a\tb\tc"));
+    }
+
+    @Test
+    void tabStopsScaleWithDpi() {
+        MarkupRenderer r = new MarkupRenderer(144d);
+        r.setAlignment(LEFT_TOP);
+        r.setTabWidth(1d);
+        assertEquals(List.of(0f, 144f), xOffsets(segmentsOf(r, "a\tb")));
+    }
+
+    @Test
+    void tabSkipsStopsAlreadyPassed() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTabWidth(0.1d);
+        float textEnd = xOffsets(segmentsOf(r, "a long enough run\tb")).get(1);
+        assertTrue(textEnd > 7.2f);
+        assertEquals(0f, textEnd % 7.2f, 0.01f);
+    }
+
+    @Test
+    void multipleStopsCycleThroughWidths() {
+        assertEquals(List.of(0f, 72f, 216f, 288f), tabXs("<tabwidth 1in 2in>a\tb\tc\td"));
+    }
+
+    @Test
+    void tabStopsAreRelativeToEachParagraph() {
+        List<LayoutSegment> segments = layoutOf("<tabwidth 1in>a\tb\nc\td", 300, 200);
+        assertEquals(List.of(0f, 72f, 0f, 72f), xOffsets(segments));
+    }
+
+    @Test
+    void alignmentShiftsTabbedSegmentsTogether() {
+        List<Float> xs = xOffsets(layoutAligned("<tabwidth 1in>a\tb",
+                MarkupRenderer.LAYOUT_RIGHT | MarkupRenderer.LAYOUT_TOP, 300, 200));
+        assertTrue(xs.get(0) > 0f);
+        assertEquals(72f, xs.get(1) - xs.get(0), 0.01f);
+    }
+
+    @Test
+    void lastTabwidthTagApplies() {
+        assertEquals(List.of(0f, 144f), tabXs("<tabwidth 1in>a\t<tabwidth 2in>b"));
+    }
+
+    @Test
+    void tabwidthTagStaysSetForLaterMarkup() {
+        MarkupRenderer r = new MarkupRenderer();
+        segmentsOf(r, "<tabwidth 1in>a");
+        assertEquals(1d, r.getTabWidth(), 1e-9);
+        assertEquals(List.of(0f, 72f), xOffsets(segmentsOf(r, "a\tb")));
+    }
+
+    @Test
+    void tabwidthTagIsCaseInsensitive() {
+        assertEquals(tabXs("<tabwidth 1in>a\tb"), tabXs("<TABWIDTH 1in>a\tb"));
+    }
+
+    @Test
+    void tabwidthTagWithoutParametersKeepsWidth() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTabWidth(2d);
+        segmentsOf(r, "<tabwidth>a");
+        assertArrayEquals(new double[]{2d}, r.getTabWidths());
+    }
+
+    @Test
+    void invalidTabwidthParametersBecomeZero() {
+        MarkupRenderer r = new MarkupRenderer();
+        segmentsOf(r, "<tabwidth 1in garbage -1in NaN>a");
+        assertArrayEquals(new double[]{1d, 0d, 0d, 0d}, r.getTabWidths());
+    }
+
+    @Test
+    void changingTabWidthAppliesToNextLayout() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTabWidth(1d);
+        assertEquals(List.of(0f, 72f), xOffsets(segmentsOf(r, "a\tb")));
+        r.setTabWidth(2d);
+        assertEquals(List.of(0f, 144f), xOffsets(segmentsOf(r, "a\tb")));
+    }
+
+    @Test
+    void leadingTabStaysAtMarginWithSingleWidth() {
+        // The single-width stop array starts at the margin; the
+        // multi-width array starts one width in.
+        List<Float> single = tabXs("<tabwidth 1in>\tb");
+        assertEquals(0f, single.get(single.size() - 1), 0.01f);
+        List<Float> multi = tabXs("<tabwidth 1in 1in>\tb");
+        assertEquals(72f, multi.get(multi.size() - 1), 0.01f);
+    }
+
+    @Test
+    void textPastLastStopPreservesAllCharacters() {
+        List<LayoutSegment> segments = layoutOf("<tabwidth 1in>a\tb\tc\td\te", 100, 200);
+        assertEquals(9, totalCharacters(segments));
+    }
+
+    @Test
+    void singleLineDrawIgnoresTabStops() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setTabWidth(2d);
+        r.setMarkupText("a\tb");
+        try (GraphicsHandle gh = new GraphicsHandle(400, 200)) {
+            double width = r.drawAsSingleLine(gh.g, new Rectangle2D.Double(0, 0, 300, 100));
+            assertTrue(width > 0d && width < 144d, "width " + width);
+        }
+    }
+
+    @Test
+    void justificationSkipsSegmentEndingAtTab() {
+        String body = "one two\tThe quick brown fox jumps over the lazy dog again.";
+        float plain = textLayoutOf(layoutAligned(body, LEFT_TOP, 100, 400).get(0)).getAdvance();
+        float justified = textLayoutOf(
+                layoutAligned("<justified>" + body, LEFT_TOP, 100, 400).get(0)).getAdvance();
+        assertEquals(plain, justified, 0.01f);
+    }
+
+    @Test
+    void justifiedSegmentAfterTabOverrunsRightMargin() {
+        // getJustifiedLayout gets the full line width, not what remains
+        // after the tab stop.
+        List<LayoutSegment> segments = layoutAligned(
+                "<justified><tabwidth 0.5in>a\tThe quick brown fox jumps over the lazy dog.",
+                LEFT_TOP, 100, 400);
+        LayoutSegment afterTab = segments.get(1);
+        assertTrue(afterTab.getXOffset() + textLayoutOf(afterTab).getVisibleAdvance() > 100f);
+    }
+
+    // ---- Measurements ------------------------------------------------
+
+    @Test
+    void parseMeasurementConvertsUnitsToInches() {
+        assertEquals(2d, MarkupRenderer.parseMeasurement("2in"), 1e-9);
+        assertEquals(1d, MarkupRenderer.parseMeasurement("72pt"), 1e-9);
+        assertEquals(1d, MarkupRenderer.parseMeasurement("2.54cm"), 1e-9);
+    }
+
+    @Test
+    void parseMeasurementDefaultsToCentimeters() {
+        assertEquals(1d, MarkupRenderer.parseMeasurement("2.54"), 1e-9);
+    }
+
+    @Test
+    void parseMeasurementUnitIsCaseInsensitive() {
+        assertEquals(2d, MarkupRenderer.parseMeasurement("2IN"), 1e-9);
+    }
+
+    @Test
+    void parseMeasurementReturnsNegativeForInvalidInput() {
+        for (String bad : List.of("", "in", "garbage", "1 in x")) {
+            assertTrue(MarkupRenderer.parseMeasurement(bad) < 0d, bad);
+        }
+    }
+
+    @Test
+    void parseMeasurementRejectsNaNAndInfinity() {
+        // Lowercasing the input stops Double.parseDouble recognizing them.
+        assertTrue(MarkupRenderer.parseMeasurement("NaN") < 0d);
+        assertTrue(MarkupRenderer.parseMeasurement("Infinity") < 0d);
+    }
+
+    private static List<Float> tabXs(String markup) {
+        return xOffsets(layoutOf(markup, 300, 200));
+    }
+
+    private static List<Float> xOffsets(List<LayoutSegment> segments) {
+        return segments.stream().map(LayoutSegment::getXOffset).toList();
     }
 
     // ---- Test scaffolding --------------------------------------------
