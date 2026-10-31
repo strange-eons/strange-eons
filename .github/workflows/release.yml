@@ -332,3 +332,11 @@ jobs:
           echo
           echo "Release URL:"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url
+      # The registry's hourly schedule picks up the release if this fails.
+      - name: Trigger catalog build
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/strange-eons/strange-eons-registry/dispatches \
+            -f event_type=release-published
