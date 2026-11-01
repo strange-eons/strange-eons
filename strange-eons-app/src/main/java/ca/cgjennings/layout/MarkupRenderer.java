@@ -405,6 +405,9 @@ public class MarkupRenderer {
      * associated with this tag, the replacement will be removed.
      */
     public void setStyleForTag(String tagName, TextStyle style) {
+        if (tagName == null) {
+            return;
+        }
         removeTag(tagName);
         styleMap.put(tagName.toLowerCase(), style);
     }
@@ -424,6 +427,9 @@ public class MarkupRenderer {
      * based on the tag's parameters.
      */
     public void setParametricStyleForTag(String tagName, ParametricStyleFactory factory) {
+        if (tagName == null) {
+            return;
+        }
         removeTag(tagName);
         parametricStyleMap.put(tagName.toLowerCase(), factory);
     }
@@ -443,6 +449,9 @@ public class MarkupRenderer {
      * repalcement.
      */
     public void setReplacementForTag(String tagName, String replacement) {
+        if (tagName == null) {
+            return;
+        }
         removeTag(tagName);
         replacements.put(tagName.toLowerCase(), replacement);
     }
@@ -458,9 +467,13 @@ public class MarkupRenderer {
 
     /**
      * If a style or replacement is associated with this tag, the style will be
-     * removed and the tag will be treated as an unknown tag.
+     * removed and the tag will be treated as an unknown tag. A {@code null} tag
+     * name is ignored, here and by the methods that set a tag.
      */
     public void removeTag(String tagName) {
+        if (tagName == null) {
+            return;
+        }
         tagName = tagName.toLowerCase();
         if (styleMap.containsKey(tagName)) {
             styleMap.remove(tagName);

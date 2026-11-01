@@ -2688,6 +2688,17 @@ class MarkupRendererTest {
     }
 
     @Test
+    void nullTagNameIsIgnoredWhenChangingTags() {
+        MarkupRenderer r = new MarkupRenderer();
+        r.setMarkupText("x<emdash>y");
+        r.setStyleForTag(null, TextStyle.BOLD_STYLE);
+        r.setParametricStyleForTag(null, FontSizeStyleFactory.getShared());
+        r.setReplacementForTag(null, null);
+        r.removeTag(null);
+        assertEquals("x\u2014y", parsedText(r, "x<emdash>y"));
+    }
+
+    @Test
     void tagTableIsCaseInsensitive() {
         MarkupRenderer r = new MarkupRenderer();
         assertNotNull(r.getStyleForTag("B"));
