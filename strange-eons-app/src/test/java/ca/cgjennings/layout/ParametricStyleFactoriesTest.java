@@ -145,11 +145,10 @@ class ParametricStyleFactoriesTest {
     }
 
     @Test
-    void fontSizeFactoryDefaultsToTenForUnparseable() {
-        // The initial value is 10f; if parse fails, it stays.
+    void fontSizeFactoryLeavesSizeUnsetForUnparseable() {
         TextStyle style = FontSizeStyleFactory.getShared()
                 .createStyle(null, new String[] {"notanumber"});
-        assertEquals(10f, ((Number) style.get(TextAttribute.SIZE)).floatValue(), 0.001f);
+        assertNull(style.get(TextAttribute.SIZE));
     }
 
     // ---- TrackingStyleFactory ---------------------------------------

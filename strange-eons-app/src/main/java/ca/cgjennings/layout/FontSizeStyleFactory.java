@@ -22,6 +22,8 @@ public class FontSizeStyleFactory implements ParametricStyleFactory {
             try {
                 size = Float.parseFloat(parameters[0]);
             } catch (NumberFormatException e) {
+                // an unusable size leaves the current size in effect
+                return new TextStyle();
             }
             if (relative != null) {
                 size = (size / 100f) * ((Number) relative).floatValue();

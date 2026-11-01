@@ -842,9 +842,15 @@ class MarkupRendererTest {
     }
 
     @Test
-    void quoteAfterOpenParenthesisIsTreatedAsClose() {
-        // Only whitespace and dashes before a quote select the open form.
-        assertEquals("(”x”)", parsedText("(\"x\")"));
+    void quoteAfterOpeningPunctuationOpens() {
+        assertEquals("(\u201Cx\u201D)", parsedText("(\"x\")"));
+        assertEquals("[\u2018x\u2019]", parsedText("['x']"));
+        assertEquals("{\u201Cx\u201D}", parsedText("{\"x\"}"));
+    }
+
+    @Test
+    void quoteInsideOpenQuoteOpens() {
+        assertEquals("\u201C\u2018x\u2019\u201D", parsedText("\"'x'\""));
     }
 
     @Test
@@ -1776,13 +1782,11 @@ class MarkupRendererTest {
     }
 
     @Test
-    void invalidSizeTagFallsBackToFactoryDefault() {
-        // FontSizeStyleFactory substitutes its own 10pt default rather
-        // than leaving the renderer's 9pt default in place.
+    void invalidSizeTagLeavesCurrentSize() {
         String markup = "Hello <size garbage>foo</size> world.";
         assertEquals(totalGlyphsRendered("Hello foo world."), totalGlyphsRendered(markup));
-        List<Font> fonts = fontsRendered(markup);
-        assertEquals(List.of(9f, 10f, 9f), fonts.stream().map(Font::getSize2D).toList());
+        assertThat(fontsRendered(markup)).allSatisfy(f -> assertThat(f.getSize2D()).isEqualTo(9f));
+        assertThat(fontsRendered("<size 20><size garbage%>x")).allSatisfy(f -> assertThat(f.getSize2D()).isEqualTo(20f));
     }
 
     @Test
@@ -2298,8 +2302,9 @@ class MarkupRendererTest {
     }
 
     @Test
-    void unterminatedMacroReferenceDropsRestOfDefinition() {
-        assertEquals("a", parsedText("<define mail a@b.com><mail>"));
+    void atSignWithoutSemicolonInDefinitionIsLiteral() {
+        assertEquals("a@b.com", parsedText("<define mail a@b.com><mail>"));
+        assertEquals("x-a-y@", parsedText("<define m x-@1;-y@><m a>"));
     }
 
     @Test
@@ -2347,9 +2352,9 @@ class MarkupRendererTest {
     }
 
     @Test
-    void tagsBeginningWithDefineAreTreatedAsDefine() {
-        // The handler tests startsWith, so <defined> also defines.
-        assertEquals("y", parsedText("<defined x y><x>"));
+    void tagsBeginningWithDefineAreNotDefine() {
+        assertEquals("", parsedText("<defined x y><x>").trim());
+        assertEquals("kept", parsedText("<define x kept><definitely x other><x>"));
     }
 
     @Test
@@ -2614,8 +2619,16 @@ class MarkupRendererTest {
     }
 
     @Test
-    void codepointsOutsideBmpAreNotSupported() {
-        assertEquals("xy", parsedText("x<u+1F600>y"));
+    void unicodeEscapeAcceptsCodepointsOutsideBmp() {
+        assertEquals("x\uD83D\uDE00y", parsedText("x<u+1F600>y"));
+        assertEquals("\uDBFF\uDFFF", parsedText("<u+10FFFF>"));
+    }
+
+    @Test
+    void outOfRangeUnicodeEscapesAreDropped() {
+        for (String tag : List.of("<u+110000>", "<u+-1>", "<u+1000000>")) {
+            assertEquals("xy", parsedText("x" + tag + "y"), tag);
+        }
     }
 
     // ---- Removing tags -----------------------------------------------
@@ -2660,18 +2673,22 @@ class MarkupRendererTest {
     }
 
     @Test
-    void removeTagIsCaseSensitive() {
+    void tagTableIsCaseInsensitive() {
         MarkupRenderer r = new MarkupRenderer();
+        assertNotNull(r.getStyleForTag("B"));
+        assertNotNull(r.getParametricStyleForTag("SIZE"));
+        assertNotNull(r.getReplacementForTag("EMDASH"));
         r.removeTag("B");
-        assertNotNull(r.getStyleForTag("b"));
+        assertNull(r.getStyleForTag("b"));
     }
 
     @Test
-    void tagRegisteredWithUppercaseNameNeverMatches() {
-        // Markup lookups use the lowercased tag name.
+    void tagRegisteredWithUppercaseNameMatchesMarkup() {
         MarkupRenderer r = new MarkupRenderer();
         r.setReplacementForTag("Name", "replacement");
-        assertEquals("xy", parsedText(r, "x<Name>y"));
+        assertEquals("xreplacementy", parsedText(r, "x<Name>y"));
+        r.setStyleForTag("Bold", TextStyle.BOLD_STYLE);
+        assertTrue(fontsRendered(r, "<bold>x</bold>").get(0).isBold());
     }
 
     @Test

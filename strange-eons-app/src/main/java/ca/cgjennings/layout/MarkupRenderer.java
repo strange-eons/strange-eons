@@ -406,7 +406,7 @@ public class MarkupRenderer {
      */
     public void setStyleForTag(String tagName, TextStyle style) {
         removeTag(tagName);
-        styleMap.put(tagName, style);
+        styleMap.put(tagName.toLowerCase(), style);
     }
 
     /**
@@ -415,7 +415,7 @@ public class MarkupRenderer {
      * replacement or parametric style set).
      */
     public TextStyle getStyleForTag(String tagName) {
-        return styleMap.get(tagName);
+        return styleMap.get(tagName.toLowerCase());
     }
 
     /**
@@ -425,7 +425,7 @@ public class MarkupRenderer {
      */
     public void setParametricStyleForTag(String tagName, ParametricStyleFactory factory) {
         removeTag(tagName);
-        parametricStyleMap.put(tagName, factory);
+        parametricStyleMap.put(tagName.toLowerCase(), factory);
     }
 
     /**
@@ -434,7 +434,7 @@ public class MarkupRenderer {
      * replacement or style set).
      */
     public ParametricStyleFactory getParametricStyleForTag(String tagName) {
-        return parametricStyleMap.get(tagName);
+        return parametricStyleMap.get(tagName.toLowerCase());
     }
 
     /**
@@ -444,7 +444,7 @@ public class MarkupRenderer {
      */
     public void setReplacementForTag(String tagName, String replacement) {
         removeTag(tagName);
-        replacements.put(tagName, replacement);
+        replacements.put(tagName.toLowerCase(), replacement);
     }
 
     /**
@@ -453,7 +453,7 @@ public class MarkupRenderer {
      * has a style or parametric style set).
      */
     public String getReplacementForTag(String tagName) {
-        return replacements.get(tagName);
+        return replacements.get(tagName.toLowerCase());
     }
 
     /**
@@ -461,6 +461,7 @@ public class MarkupRenderer {
      * removed and the tag will be treated as an unknown tag.
      */
     public void removeTag(String tagName) {
+        tagName = tagName.toLowerCase();
         if (styleMap.containsKey(tagName)) {
             styleMap.remove(tagName);
         } else if (parametricStyleMap.containsKey(tagName)) {
@@ -1698,6 +1699,8 @@ public class MarkupRenderer {
                 int type = Character.getType(prev);
                 if (type == Character.DASH_PUNCTUATION) {
                     useCloseQuote = openQuotes > 0;
+                } else if (type == Character.START_PUNCTUATION || type == Character.INITIAL_QUOTE_PUNCTUATION) {
+                    useCloseQuote = false;
                 }
             }
 
@@ -1791,7 +1794,7 @@ public class MarkupRenderer {
         }
 
         // check if this tag is a definition
-        if (currentParametricTag.startsWith("define")) {
+        if (currentParametricTag.equals("define")) {
             String[] params = getTagParameters();
             if (params.length >= 2) {
                 setDefinitionForTag(params[0], params[1]);
@@ -2013,6 +2016,10 @@ public class MarkupRenderer {
                 }
             }
         }
+        // an @ without a closing ; is not a parameter reference
+        if (!inText) {
+            b.append('@').append(n);
+        }
         return b.toString();
     }
 
@@ -2149,15 +2156,15 @@ public class MarkupRenderer {
      * the tag yourself.
      */
     protected String handleUnknownTag(String tagnameLowercase, String tagnameOriginalCase) {
-        if (tagnameLowercase.length() <= "u+0000".length() && tagnameLowercase.startsWith("u+")) {
+        if (tagnameLowercase.length() <= "u+10ffff".length() && tagnameLowercase.startsWith("u+")) {
             try {
-                char unicodeChar = (char) Integer.parseInt(tagnameLowercase.substring("u+".length()), 16);
-                if (unicodeChar == '<') {
+                int codePoint = Integer.parseInt(tagnameLowercase.substring("u+".length()), 16);
+                if (codePoint == '<') {
                     return "<lt>";
-                } else if (unicodeChar == '>') {
+                } else if (codePoint == '>') {
                     return "<gt>";
-                } else {
-                    return String.valueOf(unicodeChar);
+                } else if (Character.isValidCodePoint(codePoint)) {
+                    return Character.toString(codePoint);
                 }
             } catch (NumberFormatException e) {
             } // will return no replacement as usual
