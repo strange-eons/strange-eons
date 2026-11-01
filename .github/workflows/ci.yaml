@@ -54,3 +54,10 @@ jobs:
           set -euo pipefail
           ${{ matrix.gradle_prefix }} ./gradlew --no-daemon \
             :strange-eons-app:check ${{ matrix.jpackage_task }}
+      - name: Upload JVM crash reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jvm-crash-reports-${{ matrix.os }}
+          path: "**/hs_err_pid*.log"
+          if-no-files-found: ignore
