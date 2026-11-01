@@ -5,7 +5,7 @@ components for paper-based games. It started out as a research tool
 for investigating human creativity, but has since grown into a
 comprehensive toolset for game enthusiasts and creators.
 
-[![CI](https://github.com/strange-eons/strange-eons/actions/workflows/ci.yaml/badge.svg)](https://github.com/christophercurrie/strange-eons/actions/workflows/ci.yaml)
+[![CI](https://github.com/strange-eons/strange-eons/actions/workflows/ci.yaml/badge.svg)](https://github.com/strange-eons/strange-eons/actions/workflows/ci.yaml)
 
 ## Features
 
