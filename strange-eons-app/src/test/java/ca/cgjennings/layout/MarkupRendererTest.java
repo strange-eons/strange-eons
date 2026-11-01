@@ -1860,7 +1860,7 @@ class MarkupRendererTest {
 
     @Test
     void adjacentHeadlinesAreSeparateParagraphs() {
-        assertEquals("One\nTwo\n ", parsedText("<h1>One</h1><h1>Two</h1>"));
+        assertEquals("One\nTwo", parsedText("<h1>One</h1><h1>Two</h1>"));
     }
 
     @Test
@@ -1904,18 +1904,34 @@ class MarkupRendererTest {
     }
 
     @Test
-    void closeTagAtEndOfMarkupLeavesTrailingEmptyParagraph() {
-        // The close tag is carried into a new paragraph, which then
-        // adds a padded blank line to the measured height.
-        assertEquals("Head\n ", parsedText("<h1>Head</h1>"));
+    void closeTagAtEndOfMarkupAddsNoParagraph() {
+        assertEquals("Head", parsedText("<h1>Head</h1>"));
+        assertEquals("Head", parsedText("<h1>Head</h1>\n"));
+        assertEquals("Head", parsedText("<H1>Head</H1>"));
+        assertEquals("before\nHead", parsedText("before<h2>Head</h2>"));
         MarkupRenderer r = new MarkupRenderer();
         try (GraphicsHandle gh = new GraphicsHandle(400, 300)) {
             Rectangle2D region = new Rectangle2D.Double(0, 0, 300, 200);
             r.setMarkupText("<h1>Head");
             double open = r.measure(gh.g, region);
             r.setMarkupText("<h1>Head</h1>");
-            assertTrue(r.measure(gh.g, region) > open);
+            assertThat(r.measure(gh.g, region)).isEqualTo(open);
         }
+    }
+
+    @Test
+    void blankLineAfterFinalHeadlineIsKept() {
+        assertEquals("Head\n ", parsedText("<h1>Head</h1>\n\n"));
+    }
+
+    @Test
+    void closeTagWithoutHeadlineIsStillParsedAsEmptyMarkup() {
+        assertEquals(" ", parsedText("</h1>"));
+    }
+
+    @Test
+    void otherCloseTagAtEndStaysInItsParagraph() {
+        assertEquals("a\n ", parsedText("a\n</b>"));
     }
 
     @Test
@@ -2187,14 +2203,13 @@ class MarkupRendererTest {
     }
 
     @Test
-    void justifiedSegmentAfterTabOverrunsRightMargin() {
-        // getJustifiedLayout gets the full line width, not what remains
-        // after the tab stop.
+    void justifiedSegmentAfterTabEndsAtRightMargin() {
         List<LayoutSegment> segments = layoutAligned(
                 "<justified><tabwidth 0.5in>a\tThe quick brown fox jumps over the lazy dog.",
                 LEFT_TOP, 100, 400);
         LayoutSegment afterTab = segments.get(1);
-        assertTrue(afterTab.getXOffset() + textLayoutOf(afterTab).getVisibleAdvance() > 100f);
+        assertThat(afterTab.getXOffset() + textLayoutOf(afterTab).getVisibleAdvance())
+                .isCloseTo(100f, within(1f));
     }
 
     // ---- Measurements ------------------------------------------------

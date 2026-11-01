@@ -702,7 +702,10 @@ public class MarkupRenderer {
     }
 
     /**
-     * Set the horizontal alignment of heading text tags (h1, h2, etc.).
+     * Set the horizontal alignment of heading text tags (h1, h2, etc.). All of
+     * h1 to h7 start a new paragraph, but only those with a registered style act
+     * as headings. By default that is only h1; use {@link #setStyleForTag} to
+     * enable the others.
      */
     public void setHeadlineAlignment(int alignment) {
         alignment = normalizeAlignment(alignment, true);
@@ -733,7 +736,8 @@ public class MarkupRenderer {
     }
 
     /**
-     * Set the distance, in inches, between tab stops.
+     * Set the distance, in inches, between tab stops. The first stop is at the
+     * left margin, so a tab at the start of a line does not move the text.
      */
     public void setTabWidth(double gapInInches) {
         if (tabWidths.length == 1) {
@@ -747,6 +751,10 @@ public class MarkupRenderer {
         }
     }
 
+    /**
+     * Set the distances, in inches, between tab stops, repeating as needed. The
+     * first stop is one distance in from the left margin.
+     */
     public void setTabWidths(double[] tabStops) {
         if (tabStops == null) {
             throw new NullPointerException("tabStops");
@@ -1184,8 +1192,11 @@ public class MarkupRenderer {
                         if ((!measureOnly || segmentAppendList != null) && (paragraph.getAlignment() & LAYOUT_JUSTIFY) != 0) {
                             // and this is not the last line in the paragraph...
                             if (!atEndOfParagraph && !atATab) {
-                                // then perform justification on this line
-                                layout = layout.getJustifiedLayout((float) (shapedX2 - shapedX1));
+                                // then perform justification on what remains of this line
+                                double justifiedWidth = shapedX2 - xPosition;
+                                if (justifiedWidth > 0d) {
+                                    layout = layout.getJustifiedLayout((float) justifiedWidth);
+                                }
                             }
                         }
 
@@ -2290,9 +2301,22 @@ public class MarkupRenderer {
             }
         }
         if (line.length() > 0) {
-            paras.add(line.toString());
+            // a closing headline tag left at the end belongs to the headline
+            if (!paras.isEmpty() && isHeadlineCloseTag(line)) {
+                int last = paras.size() - 1;
+                paras.set(last, paras.get(last) + line);
+            } else {
+                paras.add(line.toString());
+            }
         }
         return paras.toArray(String[]::new);
+    }
+
+    private static boolean isHeadlineCloseTag(CharSequence text) {
+        return text.length() == 5 && text.charAt(0) == '<' && text.charAt(1) == '/'
+                && Character.toLowerCase(text.charAt(2)) == 'h'
+                && text.charAt(3) >= '1' && text.charAt(3) <= '7'
+                && text.charAt(4) == '>';
     }
 
     /**
