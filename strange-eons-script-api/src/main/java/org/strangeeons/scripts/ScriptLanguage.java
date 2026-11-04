@@ -13,8 +13,8 @@ import java.util.Set;
  *
  * <p>Implementations are responsible for whatever runtime setup their
  * language requires (loading a polyglot context, configuring a class
- * loader, setting up host-language bindings). The host invokes only
- * {@link #createSession()} and the methods on the returned session.
+ * loader, setting up host-language bindings). The host creates sessions
+ * with {@link #createSession()} and may first call {@link #prepare()}.
  *
  * @since 3.5
  */
@@ -45,6 +45,20 @@ public interface ScriptLanguage {
      * Creates a new isolated execution session for this language.
      */
     ScriptSession createSession();
+
+    /**
+     * Starts the language's runtime ahead of the first session, so that
+     * opening the first component that uses it does not wait for startup.
+     * The host calls this on a background thread once the language's
+     * bundle is installed. The host may create more than one instance of
+     * the language, so an implementation should do the work only once per
+     * runtime. Exceptions are logged and otherwise ignored. The default does
+     * nothing.
+     *
+     * @since 3.6
+     */
+    default void prepare() {
+    }
 
     /**
      * Wraps a bundle's classloader so the language can resolve types

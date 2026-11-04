@@ -26,6 +26,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import org.strangeeons.scripts.ScriptLanguage;
 import java.util.Map;
@@ -1283,6 +1284,46 @@ public class BundleInstaller {
      */
     public static ScriptLanguage lookupScriptLanguageForExtension(String extension) {
         return findScriptLanguage(lang -> lang.fileExtensions().contains(extension));
+    }
+
+    /**
+     * Calls {@link ScriptLanguage#prepare()} for each script language in the
+     * application or a library bundle, in order, on a low-priority daemon
+     * thread. Called once library bundles are loaded, so that a language's
+     * runtime starts before the first component that uses it opens.
+     *
+     * @return the thread, already started
+     */
+    public static Thread prepareScriptLanguages() {
+        Thread thread = new Thread(() -> {
+            // the library loader also finds the application's own languages
+            Set<Class<?>> prepared = new HashSet<>();
+            Iterator<ScriptLanguage> it = ServiceLoader.load(ScriptLanguage.class, libraryClassLoader).iterator();
+            while (true) {
+                ScriptLanguage lang;
+                try {
+                    if (!it.hasNext()) {
+                        break;
+                    }
+                    lang = it.next();
+                } catch (ServiceConfigurationError e) {
+                    StrangeEons.log.log(Level.WARNING, "could not load a script language", e);
+                    continue;
+                }
+                if (!prepared.add(lang.getClass())) {
+                    continue;
+                }
+                try {
+                    lang.prepare();
+                } catch (Throwable t) {
+                    StrangeEons.log.log(Level.WARNING, "could not prepare script language " + lang.id(), t);
+                }
+            }
+        }, "script language startup");
+        thread.setDaemon(true);
+        thread.setPriority(Thread.MIN_PRIORITY);
+        thread.start();
+        return thread;
     }
 
     private static ScriptLanguage findScriptLanguage(Predicate<ScriptLanguage> test) {

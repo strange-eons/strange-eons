@@ -1978,6 +1978,7 @@ public final class StrangeEons {
         // since libs are guaranteed to be installed before themes.
         setStartupActivityMessage(string("init-libs"));
         BundleInstaller.loadLibraryBundles();
+        BundleInstaller.prepareScriptLanguages();
         setStartupPercent(15);
 
         // Both Stage 1 AND the initial boot thread will end at this point:

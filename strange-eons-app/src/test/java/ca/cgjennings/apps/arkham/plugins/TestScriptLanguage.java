@@ -22,6 +22,12 @@ public class TestScriptLanguage implements ScriptLanguage {
     /** Captures the most recently created session so tests can inspect it. */
     public static volatile RecordingSession lastSession;
 
+    /** How many times {@link #prepare()} has run, across instances. */
+    public static final java.util.concurrent.atomic.AtomicInteger prepareCount = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** When set, {@link #prepare()} throws this. */
+    public static volatile RuntimeException nextPrepareFailure;
+
     /** When set, {@code createHandler} on every session fails with this. */
     public static volatile ScriptException nextHandlerFailure;
 
@@ -45,6 +51,15 @@ public class TestScriptLanguage implements ScriptLanguage {
     @Override
     public Set<String> fileExtensions() {
         return Set.of(".test");
+    }
+
+    @Override
+    public void prepare() {
+        prepareCount.incrementAndGet();
+        RuntimeException failure = nextPrepareFailure;
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     @Override
