@@ -55,6 +55,8 @@ public class PropertyBundleEditor extends AbstractSupportEditor {
     private Properties base;
     private Properties language;
     private Properties country;
+    private File loadedFile;
+    private Properties loadedProperties;
 
     /**
      * If true, the locale has both language and country, else just language.
@@ -156,6 +158,9 @@ public class PropertyBundleEditor extends AbstractSupportEditor {
             MultilanguageSupport.changeChecker(languageField, loadDictionaryWithFeedback(locale));
         }
 
+        loadedFile = propFile;
+        loadedProperties = hasCountry ? country : language;
+
         IntegerPluralizer ip = IntegerPluralizer.create(locale);
         StringBuilder pluralHelp = new StringBuilder("<html>");
         if (ip.isFallbackPluralizer()) {
@@ -207,6 +212,10 @@ public class PropertyBundleEditor extends AbstractSupportEditor {
         } else {
             keyListValueChanged(null);
         }
+
+        // setFile marks a newly assigned file as dirty; loading the existing
+        // bundle is not an edit, so reset the state after initialization.
+        setUnsavedChanges(false);
     }
 
     private void buildCommentTable(File propFile) throws IOException {
@@ -369,10 +378,15 @@ public class PropertyBundleEditor extends AbstractSupportEditor {
 
     @Override
     protected void saveImpl(File f) throws IOException {
+        Properties p = getProperties();
+        if (f.equals(loadedFile) && p.equals(loadedProperties)) {
+            return;
+        }
         try (FileOutputStream out = new FileOutputStream(f)) {
-            Properties p = getProperties();
             p.store(out, f.getName());
         }
+        loadedFile = f;
+        loadedProperties = p;
     }
 
     /**
@@ -819,10 +833,23 @@ public class PropertyBundleEditor extends AbstractSupportEditor {
                 return;
             }
 
+            String text;
+            String current;
             if (hasCountry) {
-                curKey.setCtry(countryField.getText());
+                text = countryField.getText();
+                current = curKey.ctry;
             } else {
-                curKey.setLang(languageField.getText());
+                text = languageField.getText();
+                current = curKey.lang;
+            }
+            if (text.equals(current)) {
+                return;
+            }
+
+            if (hasCountry) {
+                curKey.setCtry(text);
+            } else {
+                curKey.setLang(text);
             }
             // in case status changes as a result
             final int i = keyList.getSelectedIndex();

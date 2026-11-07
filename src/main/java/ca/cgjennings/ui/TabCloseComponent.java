@@ -189,10 +189,12 @@ public class TabCloseComponent extends JPanel {
     public void setDirty(boolean dirty) {
         if (dirty != closeButton.isDirty()) {
             closeButton.setDirty(dirty);
-            if (!dirty && cleanFont == null) {
+            if (cleanFont == null) {
                 cleanFont = label.getFont();
             }
-            label.setFont(dirty ? dirtyFont(cleanFont) : cleanFont);
+            if (cleanFont != null) {
+                label.setFont(dirty ? dirtyFont(cleanFont) : cleanFont);
+            }
         }
     }
 
