@@ -5,6 +5,7 @@ import ca.cgjennings.graphics.ImageUtilities;
 import ca.cgjennings.graphics.shapes.AbstractVectorImage;
 import ca.cgjennings.graphics.shapes.SVGVectorImage;
 import ca.cgjennings.graphics.shapes.VectorImage;
+import ca.cgjennings.io.protocols.project.Handler;
 import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.RenderingHints;
@@ -15,7 +16,10 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.ref.SoftReference;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.logging.Level;
@@ -455,8 +459,11 @@ public abstract class StrangeImage {
         URL url = identifierToURL(identifier);
 
         if (url != null) {
-            si = cacheGet(identifier);
+            File file = localFile(identifier, url);
+            String key = file == null ? identifier : file.getAbsolutePath();
+            si = cacheGet(key, file);
             if (si == null) {
+                long timestamp = file == null ? 0L : file.lastModified();
                 // check if vector image and render it as a bitmap if so
                 int dot = identifier.lastIndexOf('.');
                 if (dot >= 0 && url.toString().indexOf('/') < dot) {
@@ -493,7 +500,7 @@ public abstract class StrangeImage {
                 }
 
                 if (si != null && si != getMissingImage()) {
-                    cachePut(identifier, si);
+                    cachePut(key, si, timestamp);
                 }
             }
         }
@@ -503,33 +510,66 @@ public abstract class StrangeImage {
         return si;
     }
 
-    private static StrangeImage cacheGet(String id) {
+    /**
+     * Returns the local file an identifier reads from: a plain path, a
+     * {@code file:} URL, or a {@code project:} URL in the open project. Returns
+     * {@code null} for other identifiers, or a {@code project:} URL with no
+     * open project.
+     */
+    static File localFile(String identifier, URL url) {
+        if (isFileIdentifier(identifier)) {
+            return new File(identifier);
+        }
+        if ("project".equals(url.getProtocol())) {
+            try {
+                url = Handler.resolve(url, Handler.getOpenProjectFolder());
+            } catch (MalformedURLException e) {
+                return null;
+            }
+        }
+        return fileFromURL(url);
+    }
+
+    /**
+     * Returns the file a {@code file:} URL names, or {@code null} for a
+     * {@code null} or other URL.
+     */
+    static File fileFromURL(URL url) {
+        if (url == null || !"file".equals(url.getProtocol())) {
+            return null;
+        }
+        try {
+            return new File(url.toURI());
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            // unencoded characters, such as spaces, are read as written
+            String path = url.getPath();
+            try {
+                path = URLDecoder.decode(path.replace("+", "%2B"), StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException stray) {
+            }
+            return new File(path);
+        }
+    }
+
+    private static StrangeImage cacheGet(String key, File file) {
         StrangeImage si = null;
         synchronized (imageCache) {
-            SoftReference<StrangeImage> ref = imageCache.get(id);
+            SoftReference<StrangeImage> ref = imageCache.get(key);
             if (ref != null) {
                 si = ref.get();
             }
-
-            // this must be a valid file, check if the timestamp changed
-            // since this indicates the file was modified
-            if (si != null && si.timestamp != 0L) {
-                if (si.timestamp != new File(id).lastModified()) {
-                    si = null;
-                }
+            // a changed timestamp means the file was modified
+            if (si != null && file != null && si.timestamp != file.lastModified()) {
+                si = null;
             }
         }
         return si;
     }
 
-    private static void cachePut(String id, StrangeImage si) {
+    private static void cachePut(String key, StrangeImage si, long timestamp) {
         synchronized (imageCache) {
-            imageCache.put(id, new SoftReference<>(si));
-
-            // if putting an image from a file into the cache, set the timestamp
-            if (isFileIdentifier(id)) {
-                si.timestamp = new File(id).lastModified();
-            }
+            si.timestamp = timestamp;
+            imageCache.put(key, new SoftReference<>(si));
         }
     }
 
